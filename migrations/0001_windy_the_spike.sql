@@ -1,0 +1,1 @@
+ALTER TABLE `publish_state` ADD `path` text DEFAULT '' NOT NULL;

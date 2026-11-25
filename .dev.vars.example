@@ -1,0 +1,15 @@
+# Required to save the GitHub publish token (it's stored encrypted). Generate with `openssl rand -base64 32`; in production `wrangler secret put SETTINGS_KEY`.
+# Losing or changing it means re-entering the token.
+SETTINGS_KEY=
+
+# Production only: required to create the first (owner) account on a deployed site. `wrangler secret put SETUP_TOKEN`. Not needed on localhost.
+# SETUP_TOKEN=
+
+# Optional social sign-in. Normally set up in Settings → Sign-in (stored encrypted with SETTINGS_KEY); these env vars are a fallback
+# for a provider that has nothing saved there. A button appears once a provider has both values.
+# GitHub: OAuth app, callback http://localhost:8787/auth/github/callback
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+# Google: OAuth client, redirect http://localhost:8787/auth/google/callback
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=

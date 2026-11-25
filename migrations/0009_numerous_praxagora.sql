@@ -1,0 +1,1 @@
+ALTER TABLE `collections` ADD `folder` text;

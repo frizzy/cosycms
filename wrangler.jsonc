@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cosycms",
+  "account_id": "499288dc88a6d7445479fa53b4cdff99",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": false,
+  "assets": { "directory": "admin/dist", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*", "/oauth/*", "/auth/*", "/mcp", "/.well-known/*"] },
+
+  // TOP LEVEL = local dev (`pnpm dev`, Miniflare) and the future production. It has no routes, so it can't be deployed by accident.
+  "d1_databases": [{ "binding": "DB", "database_name": "cosycms", "database_id": "local", "migrations_dir": "migrations" }],
+  "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "cosycms-blobs" }],
+
+  "env": {
+    "staging": {
+      // Deployed as the worker "cosycms-staging". Bindings are NOT inherited, so they are repeated.
+      // Secrets (wrangler secret put <NAME> --env staging): SETUP_TOKEN (needed once, to create the owner), and optionally GITHUB_CLIENT_ID/SECRET, GOOGLE_CLIENT_ID/SECRET.
+      "routes": [{ "pattern": "cosycms.staging.glowpotion.dev", "custom_domain": true }],
+      "d1_databases": [{ "binding": "DB", "database_name": "cosycms-staging", "database_id": "38405133-8a1a-4ce3-920d-3ae1c2734b19", "migrations_dir": "migrations" }],
+      "r2_buckets": [{ "binding": "BLOBS", "bucket_name": "cosycms-staging-blobs" }]
+    }
+  }
+}

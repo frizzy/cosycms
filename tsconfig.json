@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "module": "ESNext", "moduleResolution": "Bundler",
+    "strict": true, "skipLibCheck": true, "noEmit": true, "allowImportingTsExtensions": true, "verbatimModuleSyntax": true,
+    "types": ["@cloudflare/workers-types", "node", "svelte"]
+  },
+  "include": ["src", "admin"]
+}

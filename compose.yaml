@@ -1,0 +1,10 @@
+# docker compose up -d --build   (needs a .dev.vars next to this file, with SETTINGS_KEY)
+services:
+  cosycms:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    volumes:
+      - ./data:/data
+      - ./.dev.vars:/app/.dev.vars:ro

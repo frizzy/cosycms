@@ -1,0 +1,7 @@
+node_modules
+.wrangler
+admin/dist
+.dev.vars
+data
+Dockerfile
+compose.yaml
