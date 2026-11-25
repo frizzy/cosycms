@@ -450,7 +450,7 @@ app.post("/publish", humanOnly, async (c) => {
     await log(c, { action: "deploy", detail: r.changed ? `${r.changed} file${r.changed === 1 ? "" : "s"}` : "nothing new" });
     return c.json(r);
   }
-  catch (e) { return c.json({ error: (e as Error).message }, 502); }
+  catch (e) { return c.json({ error: (e as Error).message }, 424); }
 });
 
 // What the site's CI did for a commit we pushed (the Deploy dialog polls this).
@@ -461,8 +461,8 @@ app.get("/ci", humanOnly, async (c) => {
   if (tokenError || !token || !repo) return c.json({ error: tokenError ?? "GitHub target not configured" }, 400);
   try { return c.json(await githubRuns({ token, repo, branch, dir }, sha)); }
   catch (e) {
-    const s = (e as { status?: number }).status;
-    return c.json({ error: s === 403 || s === 404 ? "The token can't read GitHub Actions. Give it Actions: read in Settings → Deploy target." : (e as Error).message }, 502);
+    const s = (e as { status?: number }).status, why = (e as Error).message.match(/"message":\s*"([^"]*)"/)?.[1];
+    return c.json({ error: s === 403 || s === 404 ? `GitHub refused the request${why ? ` (${why})` : ""}. The token needs Actions: read on ${repo}.` : (e as Error).message }, 424);
   }
 });
 

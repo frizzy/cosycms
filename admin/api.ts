@@ -19,7 +19,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   if (res.status === 401 && path !== "/login") hooks.unauthorized();
   if (!res.ok) {
     const e = (await res.json().catch(() => ({}))) as { error?: string; fieldErrors?: Record<string, string[]>; formErrors?: string[] };
-    throw new Error(e.error ?? [...(e.formErrors ?? []), ...Object.entries(e.fieldErrors ?? {}).map(([k, v]) => `${k}: ${v}`)].join("; ") ?? res.statusText);
+    throw new Error(e.error ?? [...(e.formErrors ?? []), ...Object.entries(e.fieldErrors ?? {}).map(([k, v]) => `${k}: ${v}`)].join("; ") || res.statusText || `Request failed (${res.status})`);
   }
   return res.status === 204 ? (undefined as T) : res.json();
 }
