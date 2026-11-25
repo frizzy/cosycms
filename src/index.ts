@@ -9,7 +9,7 @@ import { changedKeys, logActivity, type Event } from "./activity";
 import { BlockDef, blockLibraries } from "./blocks";
 import { CollectionCreate, CollectionDef, dataSchema, entryLabel, fileFieldOf, nextFreeSlug, shapeChanges, slugBase, type Field } from "./fields";
 import { bodyLimit } from "hono/body-limit";
-import { githubTarget } from "./github";
+import { githubRuns, githubTarget } from "./github";
 import { r2Store } from "./blobs";
 import { KEY_RE, MAX_IMAGE_BYTES, blobKey, blobUrl, sniffImage } from "./images";
 import { docBlockNames, docImageIds, docLinkIds, fillPictures } from "./markdown";
@@ -451,6 +451,19 @@ app.post("/publish", humanOnly, async (c) => {
     return c.json(r);
   }
   catch (e) { return c.json({ error: (e as Error).message }, 502); }
+});
+
+// What the site's CI did for a commit we pushed (the Deploy dialog polls this).
+app.get("/ci", humanOnly, async (c) => {
+  const sha = c.req.query("sha") ?? "";
+  if (!/^[0-9a-f]{40}$/.test(sha)) return c.json({ error: "sha must be a full commit id" }, 400);
+  const { token, tokenError, repo, branch, dir } = await loadGithub(c.env.DB, c.env);
+  if (tokenError || !token || !repo) return c.json({ error: tokenError ?? "GitHub target not configured" }, 400);
+  try { return c.json(await githubRuns({ token, repo, branch, dir }, sha)); }
+  catch (e) {
+    const s = (e as { status?: number }).status;
+    return c.json({ error: s === 403 || s === 404 ? "The token can't read GitHub Actions. Give it Actions: read in Settings → Deploy target." : (e as Error).message }, 502);
+  }
 });
 
 // Sign-in and OAuth routes come first (reachable signed out); everything else under /api needs a session or an access token.

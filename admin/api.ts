@@ -88,6 +88,7 @@ export const api = {
   slugAvailable: (collection: string, slug: string, except?: string) =>
     call<{ available: boolean; suggestion?: string }>(`/slug-available?${new URLSearchParams({ collection, slug, ...(except ? { except } : {}) })}`),
   build: () => call<{ pages: number; images: number; removed: number; paths: { type: "page" | "image" | "delete"; path: string }[]; more: number; warnings: string[]; conflicts: string[]; error?: string }>("/build", { method: "POST" }),
+  ci: (sha: string) => call<{ state: "none" | "running" | "success" | "failed"; runs: { name: string; state: "running" | "success" | "failed"; url: string }[] }>(`/ci?sha=${sha}`),
   publish: () => call<{ changed: number; ref?: string; warnings?: string[]; remaining?: number }>("/publish", { method: "POST" }),
   counts: () => call<Counts>("/entries/counts"),
   activity: (o: { entry?: string; offset?: number } = {}) => call<{ items: Activity[]; total: number }>(`/activity?limit=50&offset=${o.offset ?? 0}${o.entry ? `&entry=${encodeURIComponent(o.entry)}` : ""}`),

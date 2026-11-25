@@ -27,7 +27,7 @@
     <label>Access token
       <input type="password" bind:value={token} autocomplete="off"
         placeholder={hasToken ? "•••••••• saved — leave blank to keep" : "github_pat_…"} />
-      <small class="muted">Needs Contents: read &amp; write on the repo. Stored encrypted and never shown again.</small>
+      <small class="muted">Needs Contents: read &amp; write on the repo, and Actions: read to show the site build after a deploy. Stored encrypted and never shown again.</small>
       {#if tokenError}<small class="error">{tokenError}</small>{/if}
     </label>
     <div class="actions">

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { draftWarnings, entryFiles, filePath, plan, relative, render, type PublishedEntry, type RenderCtx } from "./plan.ts";
-import { githubTarget } from "./github.ts";
+import { githubRuns, githubTarget } from "./github.ts";
 import { frontmatter } from "./frontmatter.ts";
 import { IMAGE_DEFAULTS, KEY_RE, blobKey, fitWithin, imageOptions, isAnimated, outputType, sniffImage } from "./images.ts";
 import { CollectionCreate, CollectionDef, dataSchema, entryLabel, folderError, nextFreeSlug, shapeChanges, slugify, type Field } from "./fields.ts";
@@ -507,4 +507,24 @@ test("a link to another entry publishes as that collection's page address", () =
   const warn = draftWarnings([e], new Map([["t1", { collection: "posts", slug: "oiling", status: "published" }], ["t2", { collection: "notes", slug: "n", status: "published" }]]), ctx);
   assert.equal(warn.length, 1);
   assert.match(warn[0], /notes has no page address/);
+});
+
+test("githubRuns: looks up runs by commit and reduces them to one state", async () => {
+  const run = (status: string, conclusion: string | null, name = "Deploy") => ({ name, status, conclusion, html_url: `https://x/${name}` });
+  const ask = async (runs: unknown[]) => {
+    let url = "";
+    const fake: typeof fetch = async (u) => { url = String(u); return new Response(JSON.stringify({ workflow_runs: runs })); };
+    const r = await githubRuns({ token: "t", repo: "o/r" }, "abc", fake);
+    return { ...r, url };
+  };
+  const a = await ask([]);
+  assert.equal(a.state, "none");
+  assert.match(a.url, /repos\/o\/r\/actions\/runs\?head_sha=abc/);
+  assert.equal((await ask([run("queued", null)])).state, "running");
+  assert.equal((await ask([run("completed", "success"), run("in_progress", null, "Lint")])).state, "running");
+  assert.equal((await ask([run("completed", "success"), run("completed", "skipped", "Lint")])).state, "success");
+  assert.equal((await ask([run("completed", "success"), run("completed", "failure", "Lint")])).state, "failed");
+  assert.equal((await ask([run("completed", "cancelled")])).state, "failed");
+  const denied: typeof fetch = async () => new Response("nope", { status: 403 });
+  await assert.rejects(() => githubRuns({ token: "t", repo: "o/r" }, "abc", denied), (e: any) => e.status === 403);
 });
