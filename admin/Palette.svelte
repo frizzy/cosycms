@@ -55,6 +55,7 @@
     if (e.key === "ArrowDown") { e.preventDefault(); sel = all.length ? (sel + 1) % all.length : 0; }
     else if (e.key === "ArrowUp") { e.preventDefault(); sel = all.length ? (sel + all.length - 1) % all.length : 0; }
     else if (e.key === "Enter") { e.preventDefault(); pick(sel); }
+    else if (e.key === "Escape") { e.preventDefault(); close(); } // a search input would otherwise clear its text first and swallow the key
   }
 </script>
 
