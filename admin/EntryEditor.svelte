@@ -56,6 +56,8 @@
   const fingerprint = () => JSON.stringify([slug, Object.entries(data).filter(([, v]) => present(v)).sort(([x], [y]) => (x < y ? -1 : 1))]);
   let baseline = $state<string>();
   const rebase = () => (baseline = fingerprint());
+  // A future go-live time means saving schedules the publish; the Publish button then goes live immediately instead, and cancels it.
+  const later = $derived(!!c.scheduleField && Date.parse(String(data[c.scheduleField] ?? "")) > Date.now());
   const dirty = $derived(!loading && baseline !== undefined && fingerprint() !== baseline);
   $effect(() => { if (!loading) tick().then(rebase); }); // after bindings and the editor have settled
   $effect(() => {
@@ -101,6 +103,7 @@
 
   // Publishing saves any open edits first, then makes the draft the live version.
   async function publish() {
+    if (later && !confirm("Publish now? This cancels the scheduled time.")) return;
     if (!id || (dirty && !(await persist()))) return;
     try { ({ published, pending, schedule: sched } = await api.publishEntry(id)); toast("Published. It goes to the site on the next Deploy."); refreshCounts(); } catch (e) { error = (e as Error).message; }
   }
@@ -154,8 +157,8 @@
     </div>
     {#each c.fields as f (f.key)}<FieldInput field={f} bind:value={data[f.key]} />{/each}
     <div class="actions">
-      <button type="submit" class={id && (!published || pending || dirty) ? "ghost" : ""} disabled={saving}>Save draft</button>
-      {#if id && (!published || pending || dirty)}<button type="button" onclick={publish} disabled={saving}>{published ? "Publish changes" : "Publish"}</button>{/if}
+      <button type="submit" class={id && !later && (!published || pending || dirty) ? "ghost" : ""} disabled={saving}>{later ? "Save and schedule" : "Save draft"}</button>
+      {#if id && (!published || pending || dirty)}<button type="button" class={later ? "ghost" : ""} onclick={publish} disabled={saving}>{later ? "Publish now" : published ? "Publish changes" : "Publish"}</button>{/if}
       {#if id && published && pending && !dirty}<button type="button" class="ghost" onclick={revert}>Discard draft changes</button>{/if}
       {#if id && published}<button type="button" class="ghost" onclick={unpublish}>Unpublish</button>{/if}
       {#if id}<button type="button" class="danger" onclick={remove}>Delete</button>{/if}
