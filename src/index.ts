@@ -415,6 +415,15 @@ app.post("/entries/:id/revert", async (c) => {
   } catch (e) { if (isConflict(e)) return c.json({ error: "The published slug is now used by another entry." }, 409); throw e; }
 });
 
+// The values a select field already holds across the collection, most used first: what a tag input suggests, and what the collection editor can add to the options.
+app.get("/collections/:key/values/:field", async (c) => {
+  const [col] = await db(c).select().from(collections).where(eq(collections.key, c.req.param("key")));
+  const f = col?.fields.find((x) => x.key === c.req.param("field"));
+  if (!col || f?.type !== "select") return c.json({ error: "not a select field" }, 404);
+  const { results } = await c.env.DB.prepare("select value v, count(*) n from entries, json_each(entries.data, ?) where collection = ? and typeof(value) = 'text' and value != '' group by value order by n desc, v limit 500").bind(`$.${f.key}`, col.key).all<{ v: string }>();
+  return c.json(results.map((r) => r.v));
+});
+
 // Entries that still point at this one (checked through every reference field that targets its collection).
 type Use = { id: string; collection: string; slug: string };
 async function usedBy(c: { env: Env["Bindings"] }, e: { id: string; collection: string }, limit = 5) {

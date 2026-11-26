@@ -101,6 +101,7 @@ export const api = {
   activity: (o: { entry?: string; offset?: number } = {}) => call<{ items: Activity[]; total: number }>(`/activity?limit=50&offset=${o.offset ?? 0}${o.entry ? `&entry=${encodeURIComponent(o.entry)}` : ""}`),
   undo: (id: string) => call<Entry>(`/activity/${id}/undo`, { method: "POST" }),
   schedule: () => call<{ kind: string; at: string; status: string; error: string | null; entry?: { id: string; collection: string; label: string } }[]>("/schedule"),
+  values: (collection: string, field: string) => call<string[]>(`/collections/${collection}/values/${field}`),
   notices: () => call<{ items: Notice[]; unread: number }>("/notifications"),
   readNotices: (id?: string) => call<void>(id ? `/notifications/${id}/read` : "/notifications/read", { method: "POST" }),
   dismissNotice: (id: string) => call<void>(`/notifications/${id}`, { method: "DELETE" }),

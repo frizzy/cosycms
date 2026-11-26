@@ -7,11 +7,15 @@
   import ReferenceInput from "./ReferenceInput.svelte";
   import DateTimeInput from "./DateTimeInput.svelte";
   import { store } from "./store.svelte";
+  import { api } from "./api";
 
   // One input per field definition. Used by the entry editor and by the picker's quick-create form.
-  let { field: f, value = $bindable(), locked = "" }: { field: Field; value?: unknown; locked?: string } = $props(); // locked: read-only, and why
+  let { field: f, value = $bindable(), locked = "", collection = "" }: { field: Field; value?: unknown; locked?: string; collection?: string } = $props(); // locked: read-only, and why
   const name = $derived(f.label + (f.required && f.type !== "boolean" && f.type !== "richtext" ? " *" : ""));
   const uid = Math.random().toString(36).slice(2);
+  // Free-form tags suggest what other entries in the collection already use.
+  let learned = $state<string[]>([]);
+  $effect(() => { if (collection && f.type === "select" && f.multiple && f.allowCustom) api.values(collection, f.key).then((v) => (learned = v), () => {}); });
 
 
   function toggle(option: string) {
@@ -27,7 +31,7 @@
 {:else if f.type === "richtext"}
   <div class="field">{name}<RichText bind:value library={f.imageLibrary} imageComponent={f.imageComponent} blocks={(f.blocks ?? []).flatMap((k) => store.blocks.filter((b) => b.key === k))} templates={(f.templates ?? []).flatMap((k) => store.templates.filter((t) => t.key === k && t.body))} /></div>
 {:else if f.type === "select" && f.multiple && f.allowCustom}
-  <div class="field">{name}<TagsInput bind:value={value as string[]} suggestions={f.options} /></div>
+  <div class="field">{name}<TagsInput bind:value={value as string[]} suggestions={[...f.options, ...learned.filter((v) => !f.options.includes(v))]} /></div>
 {:else if f.type === "select" && f.multiple}
   <div class="field">{name}
     <div class="checks">

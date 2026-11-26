@@ -106,6 +106,14 @@
     const f = (k: string, l: string, type: string, preset: string, required = false): Row => ({ ...blank(), key: k, label: l, type, preset, required, touched: true });
     rows = [f("image", "Image", "file", "image", true), f("alt", "Alt text", "text", "text", true), f("credit", "Credit", "text", "text")];
   }
+  // Pulls the values entries already hold (e.g. the tags they use) into a select field's options.
+  async function addUsed(r: Row) {
+    try {
+      const have = new Set(r.options.split("\n").map((o) => o.trim()).filter(Boolean)), more = (await api.values(existing!.key, r.key)).filter((v) => !have.has(v));
+      r.options = [...have, ...more].join("\n");
+      toast(more.length ? `Added ${more.length} value${more.length === 1 ? "" : "s"}` : "Nothing new to add");
+    } catch (e) { error = (e as Error).message; }
+  }
   function move(i: number, d: number) { [rows[i], rows[i + d]] = [rows[i + d], rows[i]]; }
 
   async function save(ev: SubmitEvent) {
@@ -277,6 +285,7 @@
           </label>
         {:else if row.type === "select"}
           <label>Options (one per line)<textarea rows="4" bind:value={row.options}></textarea></label>
+          {#if existing && !row.isNew}<div><button type="button" class="ghost" onclick={() => addUsed(row)}>Add values already used</button> <small class="muted">Adds what entries in this collection already hold.</small></div>{/if}
           <div class="inline">
             <label class="check"><input type="checkbox" bind:checked={row.multiple} disabled={!row.isNew} />Allow multiple</label>
             <label class="check"><input type="checkbox" bind:checked={row.allowCustom} />Allow new values (tags)</label>
