@@ -333,6 +333,16 @@ dialog.ask { width:min(28rem, 92vw); } .ask-msg { margin:0; color:var(--muted); 
 .hits { list-style:none; padding:0; margin:0; display:grid; gap:2px; }
 .hits a { display:flex; align-items:center; gap:.7rem; padding:.5rem .6rem; border-radius:8px; color:var(--ink); text-decoration:none; } .hits a:hover { background:var(--accent-soft); }
 .hits img, .hits .ph { flex:none; width:36px; height:36px; border-radius:5px; object-fit:cover; background:var(--line); }
-.hits .title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; } .hits .meta { flex:none; color:var(--muted); font-size:.8rem; }
+.hits .title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; } .hits .meta { flex:none; color:var(--muted); font-size:.8rem; }
 @media (max-width:600px) { .hits a { flex-wrap:wrap; } .hits .meta { flex-basis:100%; } }
 nav a.brand { padding:0; color:inherit; } nav a.brand:hover { background:none; }
+.hits .grow { flex:1; min-width:0; display:grid; } .hits .snip { color:var(--muted); font-size:.85rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+mark { background:var(--accent-soft); color:inherit; border-radius:3px; padding:0 .1em; } .tip { margin-top:2rem; font-size:.85rem; }
+dialog.palette { width:min(36rem, 92vw); margin:12vh auto auto; padding:.6rem; max-height:70vh; overflow:hidden; display:flex; flex-direction:column; }
+dialog.palette[open] { display:flex; } dialog.palette input { font-size:1.05rem; padding:.7rem .9rem; margin:0 0 .4rem; }
+dialog.palette ul { list-style:none; margin:0; padding:0; overflow:auto; display:grid; gap:2px; }
+dialog.palette li { display:flex; align-items:center; gap:.7rem; padding:.5rem .7rem; border-radius:8px; cursor:pointer; } dialog.palette li.on { background:var(--accent-soft); }
+dialog.palette li.none { color:var(--muted); cursor:default; } dialog.palette .grow { flex:1; min-width:0; display:grid; }
+dialog.palette .title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; } dialog.palette .snip { color:var(--muted); font-size:.85rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+dialog.palette .meta { flex:none; color:var(--muted); font-size:.8rem; }
+nav .find { background:transparent; color:var(--ink); font-weight:500; margin-bottom:.4rem; } nav .find kbd { margin-left:auto; font:500 .7rem var(--sans); color:var(--muted); border:1px solid var(--line-strong); border-radius:4px; padding:0 .3rem; }

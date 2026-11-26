@@ -36,6 +36,7 @@ export type CollectionInput = { key?: string; label: string; slugSource?: string
 export type Me = { id: string; email: string; role: "owner" | "member" };
 export type Person = { id: string; email: string; role: "owner" | "member"; hasPassword: boolean };
 export type Provider = { id: string; name: string; help: string; clientId: string; hasSecret: boolean; error?: string; source: "settings" | "environment" | null; callback: string };
+export type Hit = Entry & { match: { title: string; snippet: string | null } }; // title and snippet have the matched words between \u0001 and \u0002
 export type Notice = { id: string; at: string; kind: string; level: "error" | "success" | "info"; title: string; body: string | null; link: string | null; readAt: string | null };
 export type Activity = { id: string; at: string; actor: string; via: string | null; action: string; collection: string | null; entryId: string | null; label: string | null; detail: string | null; undoable: number };
 export type Counts = Record<string, { drafts: number; edited: number }>;
@@ -103,6 +104,10 @@ export const api = {
   undo: (id: string) => call<Entry>(`/activity/${id}/undo`, { method: "POST" }),
   schedule: () => call<{ kind: string; at: string; status: string; error: string | null; entry?: { id: string; collection: string; label: string } }[]>("/schedule"),
   values: (collection: string, field: string) => call<string[]>(`/collections/${collection}/values/${field}`),
+  find: (q: string, limit = 20) => call<{ total: number; items: Hit[] }>(`/search?q=${encodeURIComponent(q)}&limit=${limit}`),
+  recent: (limit = 10) => call<{ items: Entry[] }>(`/entries/recent?limit=${limit}`),
+  searchStatus: () => call<{ entries: number; indexed: number; links: number }>("/search/status"),
+  rebuildSearch: () => call<void>("/search/rebuild", { method: "POST" }),
   notices: () => call<{ items: Notice[]; unread: number }>("/notifications"),
   readNotices: (id?: string) => call<void>(id ? `/notifications/${id}/read` : "/notifications/read", { method: "POST" }),
   dismissNotice: (id: string) => call<void>(`/notifications/${id}`, { method: "DELETE" }),

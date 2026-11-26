@@ -16,6 +16,8 @@
   import SettingsPage from "./SettingsPage.svelte";
   import ActivityPage from "./ActivityPage.svelte";
   import HomePage from "./HomePage.svelte";
+  import Palette from "./Palette.svelte";
+  import SearchIcon from "./SearchIcon.svelte";
   import ActivityIcon from "./ActivityIcon.svelte";
   import BellIcon from "./BellIcon.svelte";
   import NotificationsPage from "./NotificationsPage.svelte";
@@ -69,10 +71,11 @@
   const [a, b] = $derived(hash.replace(/^#\/?/, "").split("/"));
   const col = $derived(store.collections.find((c) => c.key === a));
 
-  let deploy: DeployDialog;
+  let deploy: DeployDialog, palette: Palette;
+  const modKey = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘K" : "Ctrl K";
 </script>
 
-<svelte:window onkeydown={(e) => { if (e.key === "Escape") menuOpen = false; }} />
+<svelte:window onkeydown={(e) => { if (e.key === "Escape") menuOpen = false; if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && store.me) { e.preventDefault(); palette.show(); } }} />
 {#if store.me === undefined}
   <div class="stack" aria-busy="true" aria-label="Loading"><div class="skel" style="height:40px"></div></div>
 {:else if !store.me}
@@ -90,6 +93,7 @@
       </button>
     </div>
     <div class="menu" id="menu" class:open={menuOpen} onclick={(e) => { if ((e.target as Element).closest("a")) menuOpen = false; }} role="presentation">
+      <button type="button" class="navrow find" onclick={() => { menuOpen = false; palette.show(); }}><SearchIcon />Search<kbd>{modKey}</kbd></button>
       {#each store.collections as c (c.key)}
         {@const n = (store.counts[c.key]?.drafts ?? 0) + (store.counts[c.key]?.edited ?? 0)}
         <a href="#/{c.key}" class:active={c.key === a}>{c.label}{#if n}<span class="badge" title="{store.counts[c.key].drafts} draft{store.counts[c.key].drafts === 1 ? "" : "s"}, {store.counts[c.key].edited} edited">{n}</span>{/if}</a>
@@ -142,3 +146,4 @@
 <Lightbox />
 <ConfirmDialog />
 <DeployDialog bind:this={deploy} />
+<Palette bind:this={palette} onDeploy={() => deploy.open()} />
