@@ -320,3 +320,10 @@ p.notice.sched { display:flex; align-items:center; gap:.5rem; } p.notice.sched.f
 .notices .mark { flex:none; width:1.4rem; height:1.4rem; border-radius:50%; display:grid; place-items:center; font-size:.8rem; font-weight:700; background:var(--line); }
 .notices li.lv-error .mark { background:var(--danger-soft); color:var(--danger); } .notices li.lv-success .mark { background:var(--accent-soft); color:var(--ok); }
 .notices .meta { display:flex; gap:.9rem; flex-wrap:wrap; margin-top:.2rem; font-size:.85rem; color:var(--muted); }
+.cd-status { margin:0 0 1rem; } .cd-h { font-size:1rem; margin:0 0 .5rem; }
+.changes { display:grid; gap:.9rem; max-height:46vh; overflow:auto; }
+.chg h3 { margin:0 0 .3rem; font-size:.9rem; } .chg .del, .chg .add, .chg .lines > div { padding:.25rem .5rem; border-radius:5px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.chg .del { background:var(--danger-soft); } .chg .add { background:var(--accent-soft); } .chg > .del + .add { margin-top:.2rem; }
+.chg .lines { display:grid; gap:2px; font-size:.9rem; } .chg .lines .same { color:var(--muted); } .chg .lines .gap { color:var(--muted); font-size:.8rem; padding:.1rem .5rem; }
+.chg .sign { display:inline-block; width:1.1rem; color:var(--muted); }
+.chg .chips { display:flex; flex-wrap:wrap; gap:.35rem; } .chg .chip { padding:.15rem .55rem; border-radius:999px; font-size:.85rem; } .chg .chip.del { background:var(--danger-soft); text-decoration:line-through; }

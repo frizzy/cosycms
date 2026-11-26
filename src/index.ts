@@ -342,7 +342,8 @@ app.get("/slug-available", async (c) => {
 
 app.get("/entries/:id", async (c) => {
   const [row] = await db(c).select().from(entries).where(eq(entries.id, c.req.param("id")));
-  return row ? c.json((await attach(c, [shape(row)]))[0]) : c.json({ error: "not found" }, 404);
+  // `live` (the published version) only on request: the editor compares against it, while agents reading an entry don't need it twice.
+  return row ? c.json((await attach(c, [c.req.query("live") ? { ...shape(row), live: row.live } : shape(row)]))[0]) : c.json({ error: "not found" }, 404);
 });
 
 app.post("/entries", async (c) => {

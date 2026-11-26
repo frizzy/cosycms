@@ -2,6 +2,8 @@
   import { tick } from "svelte";
   import { api, type Entry } from "./api";
   import ClockIcon from "./ClockIcon.svelte";
+  import ChangeDialog, { type ChangeView } from "./ChangeDialog.svelte";
+  import { fieldChanges, type Change } from "../src/diff";
   import { slugify, type Field } from "../src/fields";
   import { store, refreshCounts } from "./store.svelte";
   import { toast } from "./toast.svelte";
@@ -19,6 +21,21 @@
   let loading = $state(!!id);
   let saving = $state(false);
   let error = $state("");
+
+  // The draft and the live version as last seen on the server, so a save or a publish can say what it changed.
+  type Snap = { slug: string; publishAt: string | null; data: Record<string, unknown> };
+  let snap = $state<Snap | null>(null), liveSnap = $state<Snap | null>(null), view = $state<ChangeView | null>(null), createdId = "";
+  const copy = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
+  const cleanData = () => Object.fromEntries(Object.entries(data).filter(([, v]) => !isEmpty(v))); // empty values dropped, so optional fields don't fail validation
+  const nowSnap = (): Snap => ({ slug, publishAt: publishAt ?? null, data: copy(cleanData()) });
+  const local = (iso: string | null) => (iso ? new Date(iso).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }) : "—");
+  function changesBetween(a: Snap, b: Snap, dates: boolean): Change[] {
+    return [
+      ...(a.slug && a.slug !== b.slug ? [{ key: "slug", label: "Slug", kind: "value", before: a.slug, after: b.slug } as Change] : []),
+      ...(dates && c.dates && (a.publishAt ?? null) !== (b.publishAt ?? null) ? [{ key: "publishAt", label: "Go live", kind: "value", before: local(a.publishAt), after: local(b.publishAt) } as Change] : []),
+      ...fieldChanges(c.fields, a.data, b.data),
+    ];
+  }
 
   // Slug source: while unlocked the slug follows that field. Typing in the slug locks it (clearing it unlocks
   // and regenerates); saved entries start locked. Only the lock stops generation.
@@ -70,9 +87,14 @@
   });
   $effect(() => () => { store.dirty = false; });
 
+  function adopt(e: Entry) {
+    snap = { slug: e.slug, publishAt: e.publishAt ?? null, data: copy(e.data) };
+    liveSnap = e.live ? { slug: e.live.slug, publishAt: null, data: copy(e.live.data) } : null;
+    savedSlug = e.slug; ({ slug, data, published, pending, schedule: sched, publishAt, publishedAt, revisedAt } = e);
+  }
   $effect(() => {
     if (!id) return;
-    api.get(id).then((e) => { savedSlug = e.slug; ({ slug, data, published, pending, schedule: sched, publishAt, publishedAt, revisedAt } = e); loading = false; }, (e) => { error = e.message; loading = false; });
+    api.get(id).then((e) => { adopt(e); loading = false; }, (e) => { error = e.message; loading = false; });
   });
 
   // Where this entry is used (an image in a post, a link from another entry): shown below the form when there is anything.
@@ -80,40 +102,74 @@
   $effect(() => { if (id) api.usage(id).then((r) => (usage = r.items), () => {}); });
   const collLabel = (key: string) => store.collections.find((x) => x.key === key)?.label ?? key;
 
-  // Saving only ever changes the draft. Returns whether it saved.
-  async function persist() {
+  // Saving only ever changes the draft. Returns the entry's id when it saved.
+  async function persist(): Promise<string | null> {
     error = "";
-    if (slugStatus === "taken") { error = "That slug is already used by another entry in this collection."; return false; }
-    // Drop empty values so optional fields don't fail validation.
-    const clean = Object.fromEntries(Object.entries(data).filter(([, v]) => !isEmpty(v)));
+    if (slugStatus === "taken") { error = "That slug is already used by another entry in this collection."; return null; }
+    const clean = cleanData();
     saving = true;
     try {
       const body = { collection, slug, data: clean, ...(c.dates ? { publishAt: publishAt || null } : {}) };
       let target = id;
-      if (id) { const e = await api.update(id, body); ({ published, pending, schedule: sched, publishAt, publishedAt, revisedAt } = e); refreshCounts(); } else target = (await api.create(body)).id;
+      if (id) { const e = await api.update(id, body); ({ published, pending, schedule: sched, publishAt, publishedAt, revisedAt } = e); }
+      else { const e = await api.create(body); target = createdId = e.id; sched = e.schedule; }
+      refreshCounts();
       savedSlug = slug; if (source) locked = true;
-      rebase(); store.dirty = false; // clean before navigating so the leave-guard stays quiet
-      location.hash = `#/${collection}/${target}`;
+      rebase(); store.dirty = false; // clean first so the leave-guard stays quiet
+      snap = { slug, publishAt: publishAt ?? null, data: copy(clean) };
       saving = false;
-      return true;
+      return target ?? null;
     } catch (e) { error = (e as Error).message; }
     saving = false;
-    return false;
+    return null;
   }
-  async function save(ev: SubmitEvent) { ev.preventDefault(); if (await persist()) toast(sched ? `Scheduled to go live ${new Date(sched.at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}` : "Draft saved"); }
 
-  // Publishing saves any open edits first, then makes the draft the live version.
-  async function publish() {
-    if (!id || (dirty && !(await persist()))) return;
-    try { ({ published, pending, schedule: sched, publishAt, publishedAt, revisedAt } = await api.publishEntry(id)); toast("Published. It goes to the site on the next Deploy."); refreshCounts(); } catch (e) { error = (e as Error).message; }
+  // After a save, say what happened and what changed, then let the person go back to the list.
+  async function save(ev: SubmitEvent) {
+    ev.preventDefault();
+    const before = snap;
+    if (!(await persist())) return;
+    const scheduled = sched && !sched.failed;
+    view = {
+      stage: "done", title: scheduled ? "Scheduled" : before ? "Draft saved" : "Created",
+      status: scheduled ? `Goes live ${local(sched!.at)} and deploys automatically. Until then it stays a draft.` : published ? "The live version hasn't changed. Publish to send these changes to the site." : "It isn't on the site yet. Publish when it's ready.",
+      changes: changesBetween(before ?? { slug: "", publishAt: null, data: {} }, snap!, true), empty: before ? undefined : "",
+    };
+  }
+  function closeView() { const go = !id && createdId; view = null; if (go) location.hash = `#/${collection}/${createdId}`; }
+  function toList() { view = null; location.hash = `#/${collection}`; }
+
+  // Publishing: review what will change against the live version, then confirm. Open edits are saved first.
+  function publish() {
+    if (!id) return;
+    view = {
+      stage: "review", title: published ? "Publish these changes?" : "Publish this entry?",
+      status: published ? "These replace the live version. They reach the site on the next Deploy." : "It has never been published. It reaches the site on the next Deploy.",
+      changes: published && liveSnap ? changesBetween(liveSnap, nowSnap(), false) : [], confirm: published ? "Publish changes" : "Publish", empty: published ? "Nothing in the content differs from the live version." : "",
+    };
+  }
+  async function confirmPublish() {
+    if (!view || !id) return;
+    const review = view;
+    view = { ...review, stage: "working", error: "" };
+    if (dirty && !(await persist())) { view = { ...review, error }; return; }
+    try {
+      ({ published, pending, schedule: sched, publishAt, publishedAt, revisedAt } = await api.publishEntry(id));
+      liveSnap = nowSnap(); refreshCounts();
+      view = { stage: "done", title: "Published", status: "It goes to the site on the next Deploy.", changes: review.changes, empty: "" };
+    } catch (e) { view = { ...review, error: (e as Error).message }; }
   }
   async function unpublish() {
     if (!id || !confirm("Take this off the site? The draft stays.")) return;
-    try { ({ published, pending, schedule: sched, publishAt, publishedAt, revisedAt } = await api.unpublishEntry(id)); toast("Unpublished"); refreshCounts(); } catch (e) { error = (e as Error).message; }
+    try {
+      ({ published, pending, schedule: sched, publishAt, publishedAt, revisedAt } = await api.unpublishEntry(id));
+      liveSnap = null; refreshCounts();
+      view = { stage: "done", title: "Unpublished", status: "It comes off the site on the next Deploy. The draft stays.", changes: [], empty: "" };
+    } catch (e) { error = (e as Error).message; }
   }
   async function revert() {
     if (!id || !confirm("Throw away the draft changes and go back to the published version?")) return;
-    try { await api.revertEntry(id); store.dirty = false; loading = true; const e = await api.get(id); savedSlug = e.slug; ({ slug, data, published, pending, schedule: sched, publishAt, publishedAt, revisedAt } = e); loading = false; toast("Back to the published version"); refreshCounts(); }
+    try { await api.revertEntry(id); store.dirty = false; loading = true; const e = await api.get(id); adopt(e); loading = false; toast("Back to the published version"); refreshCounts(); }
     catch (e) { error = (e as Error).message; loading = false; }
   }
 
@@ -184,3 +240,5 @@
   .usage ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; max-height: 14rem; overflow: auto; }
   .usage li { overflow-wrap: anywhere; }
 </style>
+
+<ChangeDialog {view} canList={!c.single} onconfirm={confirmPublish} onclose={closeView} onlist={toList} />

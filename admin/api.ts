@@ -8,6 +8,7 @@ export type Entry = {
   id: string; collection: string; slug: string;
   published: boolean; pending: boolean; // has a published version; the draft differs from it
   data: Record<string, unknown>; updatedAt: string;
+  live?: { slug: string; data: Record<string, unknown> } | null; // single-entry reads only: the published version
   publishAt?: string | null; publishedAt?: string | null; revisedAt?: string | null; // go-live time; first and latest publish
   schedule?: { at: string; failed: boolean; error?: string }; // goes live at `at` (ISO); `failed` once its attempts ran out
   thumb?: string; // list view only: storage key of the thumbnail image, when the collection has a thumbnail field
@@ -88,7 +89,7 @@ export const api = {
   list: (collection?: string) => call<Entry[]>("/entries" + (collection ? `?collection=${encodeURIComponent(collection)}` : "")),
   unused: (collection: string) => call<{ items: Entry[]; total: number; scanned: number }>(`/collections/${collection}/unused`, { method: "POST" }),
   usage: (id: string) => call<{ items: { id: string; collection: string; slug: string }[] }>(`/entries/${id}/usage`),
-  get: (id: string) => call<Entry>(`/entries/${id}`),
+  get: (id: string) => call<Entry>(`/entries/${id}?live=1`),
   create: (e: EntryInput) => call<Entry>("/entries", { method: "POST", body: JSON.stringify(e) }),
   update: (id: string, e: EntryInput) => call<Entry>(`/entries/${id}`, { method: "PUT", body: JSON.stringify(e) }),
   slugAvailable: (collection: string, slug: string, except?: string) =>
