@@ -11,7 +11,7 @@ const MAX_ATTEMPTS = 3, STALE_MS = 10 * 60_000; // a "running" job older than th
 
 /** When a job should run: the datetime if it is a real time in the future, else none (past or empty times are not scheduled). */
 export function futureTime(value: unknown, now = Date.now()): Date | null {
-  const t = typeof value === "string" ? Date.parse(value) : NaN;
+  const t = value instanceof Date ? +value : typeof value === "string" ? Date.parse(value) : NaN;
   return Number.isFinite(t) && t > now ? new Date(t) : null;
 }
 

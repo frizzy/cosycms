@@ -14,6 +14,10 @@ export const entries = sqliteTable("entries", {
   live: text({ mode: "json" }).$type<{ slug: string; data: Record<string, unknown> } | null>(),
   pending: integer({ mode: "boolean" }).notNull().default(false), // published, and the draft differs from `live` (kept up to date on every write so lists and counts need no comparing)
   updatedAt: integer({ mode: "timestamp_ms" }).notNull(),
+  // Publish dates (collections with `dates` on). publishAt is when a draft should go live (null = by hand); the other two are set when it is published.
+  publishAt: integer({ mode: "timestamp_ms" }),
+  publishedAt: integer({ mode: "timestamp_ms" }), // the first time it went live
+  revisedAt: integer({ mode: "timestamp_ms" }),   // the latest publish
 }, (t) => [uniqueIndex("entries_path").on(t.collection, t.slug), index("entries_status").on(t.status)]);
 
 // Per-target publish state: lets publishes be incremental and detects out-of-band edits later.
@@ -43,7 +47,7 @@ export const collections = sqliteTable("collections", {
   urlTemplate: text(), // where an entry lives on the site, e.g. /blog/{slug}; lets links in text point at entries
   bodyField: text(), // markdown: the rich text field written as the file body
   single: integer({ mode: "boolean" }).notNull().default(false), // holds exactly one entry (a home page, site settings): the list opens it directly and a second can't be added
-  scheduleField: text(), // key of the datetime field that says when an entry goes live; a future time publishes (and deploys) it then
+  dates: integer({ mode: "boolean" }).notNull().default(false), // entries have publish dates: a go-live time they can be scheduled with, and publishedAt / revisedAt written into the published file
   fields: text({ mode: "json" }).$type<Field[]>().notNull(),
   updatedAt: integer({ mode: "timestamp_ms" }).notNull(),
 });

@@ -81,11 +81,11 @@ const baseDef = z.object({
   folder: z.string().nullish(), // where this collection's files are published; empty = a folder named after the collection
   bodyField: z.string().nullish(), // markdown only: the rich text field that becomes the file's body
   single: z.boolean().optional(), // one entry only
-  scheduleField: z.string().nullish(), // the datetime field that says when an entry goes live
+  dates: z.boolean().optional(), // entries have publish dates: a go-live time, and publishedAt / revisedAt in the published file
   fields: fieldsSchema,
 });
 
-const checkSlugSource = (v: { slugSource?: string | null; titleField?: string | null; thumbField?: string | null; scheduleField?: string | null; bodyField?: string | null; format?: string | null; folder?: string | null; fields: Field[] }, ctx: z.RefinementCtx) => {
+const checkSlugSource = (v: { slugSource?: string | null; titleField?: string | null; thumbField?: string | null; bodyField?: string | null; format?: string | null; folder?: string | null; fields: Field[] }, ctx: z.RefinementCtx) => {
   if (v.folder && folderError(v.folder, false)) ctx.addIssue({ code: "custom", message: folderError(v.folder, false)!, path: ["folder"] });
   if (v.bodyField && (!(v.format === "markdown" || v.format === "mdx") || !v.fields.some((f) => f.key === v.bodyField && f.type === "richtext")))
     ctx.addIssue({ code: "custom", message: `body field "${v.bodyField}" must be a rich text field, and only applies to Markdown or MDX`, path: ["bodyField"] });
@@ -93,8 +93,6 @@ const checkSlugSource = (v: { slugSource?: string | null; titleField?: string | 
     ctx.addIssue({ code: "custom", message: `slug source "${v.slugSource}" must be a text field`, path: ["slugSource"] });
   if (v.thumbField && !v.fields.some((f) => f.key === v.thumbField && (f.type === "file" || f.type === "reference")))
     ctx.addIssue({ code: "custom", message: `thumbnail field "${v.thumbField}" must be an image or a reference to an image library`, path: ["thumbField"] });
-  if (v.scheduleField && !v.fields.some((f) => f.key === v.scheduleField && f.type === "datetime"))
-    ctx.addIssue({ code: "custom", message: `schedule field "${v.scheduleField}" must be a date and time field`, path: ["scheduleField"] });
   if (v.titleField && !v.fields.some((f) => f.key === v.titleField && f.type === "text"))
     ctx.addIssue({ code: "custom", message: `title field "${v.titleField}" must be a single-line text field`, path: ["titleField"] });
 };
@@ -105,7 +103,7 @@ export const CollectionCreate = baseDef.extend({
   key: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "lowercase letters, numbers and dashes")
     .refine((k) => !RESERVED.includes(k), "reserved name"),
 }).superRefine(checkSlugSource);
-export type Collection = { key: string; label: string; urlTemplate?: string | null; slugSource?: string | null; titleField?: string | null; thumbField?: string | null; scheduleField?: string | null; format?: "json" | "markdown" | "mdx" | null; folder?: string | null; bodyField?: string | null; single?: boolean; fields: Field[] };
+export type Collection = { key: string; label: string; urlTemplate?: string | null; slugSource?: string | null; titleField?: string | null; thumbField?: string | null; dates?: boolean; format?: "json" | "markdown" | "mdx" | null; folder?: string | null; bodyField?: string | null; single?: boolean; fields: Field[] };
 
 /** Keys of existing fields whose type, single/multi shape or reference target changed; stored data would no longer fit. */
 const shape = (f: Field) =>

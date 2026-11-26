@@ -13,7 +13,7 @@ export const sha256 = async (d: string | BufferSource) =>
   hex(await crypto.subtle.digest("SHA-256", typeof d === "string" ? new TextEncoder().encode(d) : d));
 
 // What rendering needs to know: every collection's definition, and every entry (to resolve references to paths and slugs).
-export type CollectionInfo = { fields: Field[]; format?: string | null; bodyField?: string | null; folder?: string | null; urlTemplate?: string | null };
+export type CollectionInfo = { fields: Field[]; format?: string | null; bodyField?: string | null; folder?: string | null; urlTemplate?: string | null; dates?: boolean };
 export type RenderCtx = { collections: Map<string, CollectionInfo>; entries: Map<string, Omit<PublishedEntry, "id">>; blocks?: Map<string, BlockDef> };
 
 // ---- paths -----------------------------------------------------------------------------------------------------------
@@ -59,6 +59,9 @@ function media(id: string, fromPath: string, ctx: RenderCtx) {
 /** JSON collections publish <collection>/<slug>.json; Markdown ones publish <collection>/<slug>.md (YAML frontmatter + body). */
 const imageTag = (f?: Field) => (f?.type === "richtext" ? f.imageComponent : undefined);
 
+// The two dates a collection with publish dates adds to what it publishes.
+const DATE_FIELDS = (["publishedAt", "revisedAt"] as const).map((key) => ({ key, label: key, type: "datetime" as const })) as unknown as Field[];
+
 export function render(e: PublishedEntry, ctx?: RenderCtx) {
   const col = ctx?.collections.get(e.collection), path = outPath(e, col);
   const image: ImageResolver = (id) => {
@@ -71,7 +74,8 @@ export function render(e: PublishedEntry, ctx?: RenderCtx) {
   // A link to another entry becomes that entry's page address (its collection's urlTemplate with the slug filled in).
   const href = (id: string) => { const t = ctx?.entries.get(id), tc = t && ctx!.collections.get(t.collection); return t && tc?.urlTemplate ? tc.urlTemplate.replace("{slug}", t.slug) : undefined; };
   let data = e.data;
-  for (const f of col?.fields ?? []) {
+  const fields = col?.dates ? [...col.fields, ...DATE_FIELDS] : col?.fields ?? [];
+  for (const f of fields) {
     const v = data[f.key];
     if (v == null) continue;
     if (f.type === "reference") {
@@ -87,7 +91,7 @@ export function render(e: PublishedEntry, ctx?: RenderCtx) {
   if (isMd(col)) {
     const mdx = col!.format === "mdx";
     const body = col!.bodyField ? toMarkdown(data[col!.bodyField] as never, image, { mdx, blocks, imageComponent: imageTag(col!.fields.find((f) => f.key === col!.bodyField)) }) : "";
-    const fm = frontmatter(col!.fields, data, col!.bodyField, image, mdx, blocks);
+    const fm = frontmatter(fields, data, col!.bodyField, image, mdx, blocks);
     return { path, content: fm && body ? `${fm}\n${body}` : fm || body || "\n" };
   }
   return { path, content: JSON.stringify(data, null, 2) + "\n" };

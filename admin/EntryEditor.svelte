@@ -2,7 +2,7 @@
   import { tick } from "svelte";
   import { api, type Entry } from "./api";
   import ClockIcon from "./ClockIcon.svelte";
-  import { slugify } from "../src/fields";
+  import { slugify, type Field } from "../src/fields";
   import { store, refreshCounts } from "./store.svelte";
   import { toast } from "./toast.svelte";
   import { saveShortcut } from "./keys";
@@ -12,8 +12,9 @@
   let { collection, id }: { collection: string; id?: string } = $props();
 
   const c = store.collections.find((x) => x.key === collection)!;
+  const GO_LIVE = { key: "publishAt", label: "Go live", type: "datetime" } as Field;
   let slug = $state("");
-  let published = $state(false), pending = $state(false), sched = $state<Entry["schedule"]>(); // has a published version; the draft has moved on from it
+  let published = $state(false), pending = $state(false), sched = $state<Entry["schedule"]>(), publishAt = $state<string | null | undefined>(), publishedAt = $state<string | null | undefined>(), revisedAt = $state<string | null | undefined>(); // has a published version; the draft has moved on from it
   let data = $state<Record<string, unknown>>({});
   let loading = $state(!!id);
   let saving = $state(false);
@@ -53,11 +54,11 @@
 
   // Unsaved-changes tracking. Empty values are normalised away so a form that merely rendered isn't "dirty".
   const present = (v: unknown) => !(v === "" || v == null || v === false || (Array.isArray(v) && !v.length) || (typeof v === "number" && Number.isNaN(v)));
-  const fingerprint = () => JSON.stringify([slug, Object.entries(data).filter(([, v]) => present(v)).sort(([x], [y]) => (x < y ? -1 : 1))]);
+  const fingerprint = () => JSON.stringify([slug, publishAt ?? null, Object.entries(data).filter(([, v]) => present(v)).sort(([x], [y]) => (x < y ? -1 : 1))]);
   let baseline = $state<string>();
   const rebase = () => (baseline = fingerprint());
   // A draft with a future go-live time is scheduled when saved, and can't be published by hand until then.
-  const later = $derived(!published && !!c.scheduleField && Date.parse(String(data[c.scheduleField] ?? "")) > Date.now());
+  const later = $derived(!published && !!c.dates && Date.parse(String(publishAt ?? "")) > Date.now());
   const dirty = $derived(!loading && baseline !== undefined && fingerprint() !== baseline);
   $effect(() => { if (!loading) tick().then(rebase); }); // after bindings and the editor have settled
   $effect(() => {
@@ -71,7 +72,7 @@
 
   $effect(() => {
     if (!id) return;
-    api.get(id).then((e) => { savedSlug = e.slug; ({ slug, data, published, pending, schedule: sched } = e); loading = false; }, (e) => { error = e.message; loading = false; });
+    api.get(id).then((e) => { savedSlug = e.slug; ({ slug, data, published, pending, schedule: sched, publishAt, publishedAt, revisedAt } = e); loading = false; }, (e) => { error = e.message; loading = false; });
   });
 
   // Where this entry is used (an image in a post, a link from another entry): shown below the form when there is anything.
@@ -87,9 +88,9 @@
     const clean = Object.fromEntries(Object.entries(data).filter(([, v]) => !isEmpty(v)));
     saving = true;
     try {
-      const body = { collection, slug, data: clean };
+      const body = { collection, slug, data: clean, ...(c.dates ? { publishAt: publishAt || null } : {}) };
       let target = id;
-      if (id) { const e = await api.update(id, body); ({ published, pending, schedule: sched } = e); refreshCounts(); } else target = (await api.create(body)).id;
+      if (id) { const e = await api.update(id, body); ({ published, pending, schedule: sched, publishAt, publishedAt, revisedAt } = e); refreshCounts(); } else target = (await api.create(body)).id;
       savedSlug = slug; if (source) locked = true;
       rebase(); store.dirty = false; // clean before navigating so the leave-guard stays quiet
       location.hash = `#/${collection}/${target}`;
@@ -104,15 +105,15 @@
   // Publishing saves any open edits first, then makes the draft the live version.
   async function publish() {
     if (!id || (dirty && !(await persist()))) return;
-    try { ({ published, pending, schedule: sched } = await api.publishEntry(id)); toast("Published. It goes to the site on the next Deploy."); refreshCounts(); } catch (e) { error = (e as Error).message; }
+    try { ({ published, pending, schedule: sched, publishAt, publishedAt, revisedAt } = await api.publishEntry(id)); toast("Published. It goes to the site on the next Deploy."); refreshCounts(); } catch (e) { error = (e as Error).message; }
   }
   async function unpublish() {
     if (!id || !confirm("Take this off the site? The draft stays.")) return;
-    try { ({ published, pending, schedule: sched } = await api.unpublishEntry(id)); toast("Unpublished"); refreshCounts(); } catch (e) { error = (e as Error).message; }
+    try { ({ published, pending, schedule: sched, publishAt, publishedAt, revisedAt } = await api.unpublishEntry(id)); toast("Unpublished"); refreshCounts(); } catch (e) { error = (e as Error).message; }
   }
   async function revert() {
     if (!id || !confirm("Throw away the draft changes and go back to the published version?")) return;
-    try { await api.revertEntry(id); store.dirty = false; loading = true; const e = await api.get(id); savedSlug = e.slug; ({ slug, data, published, pending, schedule: sched } = e); loading = false; toast("Back to the published version"); refreshCounts(); }
+    try { await api.revertEntry(id); store.dirty = false; loading = true; const e = await api.get(id); savedSlug = e.slug; ({ slug, data, published, pending, schedule: sched, publishAt, publishedAt, revisedAt } = e); loading = false; toast("Back to the published version"); refreshCounts(); }
     catch (e) { error = (e as Error).message; loading = false; }
   }
 
@@ -154,7 +155,12 @@
         {:else if id && published && slug !== savedSlug}<span class="muted">The file moves when you publish this change.</span>{/if}
       </div>
     </div>
-    {#each c.fields as f (f.key)}<FieldInput field={f} bind:value={data[f.key]} locked={published && f.key === c.scheduleField ? "Locked while published. Unpublish to change it." : ""} />{/each}
+    {#each c.fields as f (f.key)}<FieldInput field={f} bind:value={data[f.key]} />{/each}
+    {#if c.dates}
+      <FieldInput field={GO_LIVE} bind:value={publishAt} locked={published ? "Locked while published. Unpublish to change it." : ""} />
+      {#if !published && !publishAt}<small class="muted">Optional. Set a future time and Save and schedule to have it published and deployed then.</small>{/if}
+      {#if publishedAt}<small class="muted">First published {new Date(publishedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}{revisedAt && revisedAt !== publishedAt ? `, last revised ${new Date(revisedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}` : ""}.</small>{/if}
+    {/if}
     <div class="actions">
       <button type="submit" class={id && !later && (!published || pending || dirty) ? "ghost" : ""} disabled={saving}>{later ? "Save and schedule" : "Save draft"}</button>
       {#if id && !later && (!published || pending || dirty)}<button type="button" onclick={publish} disabled={saving}>{published ? "Publish changes" : "Publish"}</button>{/if}

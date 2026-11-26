@@ -23,7 +23,7 @@
   // Filters, remembered per collection: status ones everywhere, plus "no <field>" for optional fields that can be left empty.
   const FKEY = $derived(`cosy.filter.${collection}`);
   const filters = $derived([
-    { value: "", text: "All" }, { value: "attention", text: "Needs publishing" }, { value: "draft", text: "Drafts" }, { value: "edited", text: "Edited" }, ...(col.scheduleField ? [{ value: "scheduled", text: "Scheduled" }] : []),
+    { value: "", text: "All" }, { value: "attention", text: "Needs publishing" }, { value: "draft", text: "Drafts" }, { value: "edited", text: "Edited" }, ...(col.dates ? [{ value: "scheduled", text: "Scheduled" }] : []),
     ...col.fields.filter((f) => !f.required && ["text", "textarea", "url", "reference", "file"].includes(f.type)).map((f) => ({ value: `empty:${f.key}`, text: `No ${f.label.toLowerCase()}` })),
   ]);
   const storedFilter = () => { try { return localStorage.getItem(FKEY) ?? ""; } catch { return ""; } };

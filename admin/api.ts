@@ -8,10 +8,11 @@ export type Entry = {
   id: string; collection: string; slug: string;
   published: boolean; pending: boolean; // has a published version; the draft differs from it
   data: Record<string, unknown>; updatedAt: string;
+  publishAt?: string | null; publishedAt?: string | null; revisedAt?: string | null; // go-live time; first and latest publish
   schedule?: { at: string; failed: boolean; error?: string }; // goes live at `at` (ISO); `failed` once its attempts ran out
   thumb?: string; // list view only: storage key of the thumbnail image, when the collection has a thumbnail field
 };
-export type EntryInput = Pick<Entry, "collection" | "slug" | "data">;
+export type EntryInput = Pick<Entry, "collection" | "slug" | "data" | "publishAt">;
 
 // The store sets this so a signed-out API call sends the user to the login screen.
 export const hooks = { unauthorized: () => {} };
@@ -29,7 +30,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export type Settings = { repo?: string; branch?: string; dir?: string; hasToken: boolean; tokenError?: string };
 export type SettingsInput = { repo: string; branch: string; dir: string; token?: string };
 
-export type CollectionInput = { key?: string; label: string; slugSource?: string | null; titleField?: string | null; thumbField?: string | null; format?: "json" | "markdown" | "mdx" | null; folder?: string | null; bodyField?: string | null; urlTemplate?: string | null; single?: boolean; scheduleField?: string | null; fields: Field[] };
+export type CollectionInput = { key?: string; label: string; slugSource?: string | null; titleField?: string | null; thumbField?: string | null; format?: "json" | "markdown" | "mdx" | null; folder?: string | null; bodyField?: string | null; urlTemplate?: string | null; single?: boolean; dates?: boolean; fields: Field[] };
 
 export type Me = { id: string; email: string; role: "owner" | "member" };
 export type Person = { id: string; email: string; role: "owner" | "member"; hasPassword: boolean };

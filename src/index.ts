@@ -27,6 +27,7 @@ const Input = z.object({
   collection: z.string(),
   slug: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "lowercase letters, numbers and dashes"),
   data: z.record(z.string(), z.unknown()),
+  publishAt: z.iso.datetime().nullish(), // go-live time (collections with dates); absent = leave as is, null = clear
 });
 
 const db = (c: { env: Env["Bindings"] }) => drizzle(c.env.DB);
@@ -220,7 +221,7 @@ app.put("/collections/:key", ownerOnly, async (c) => {
   const changed = shapeChanges(old.fields, input.data.fields);
   if (changed.length) return c.json({ error: `type or single/multi can't change for: ${changed.join(", ")}. Add a new field instead.` }, 400);
   // Optional settings are set to null, not undefined, so that clearing them actually clears the column.
-  const [row] = await db(c).update(collections).set({ ...input.data, slugSource: input.data.slugSource ?? null, titleField: input.data.titleField ?? null, urlTemplate: input.data.urlTemplate ?? null, thumbField: input.data.thumbField ?? null, scheduleField: input.data.scheduleField ?? null, format: input.data.format ?? null, folder: input.data.folder ?? null, bodyField: input.data.bodyField ?? null, single: input.data.single ?? false, updatedAt: new Date() }).where(eq(collections.key, old.key)).returning();
+  const [row] = await db(c).update(collections).set({ ...input.data, slugSource: input.data.slugSource ?? null, titleField: input.data.titleField ?? null, urlTemplate: input.data.urlTemplate ?? null, thumbField: input.data.thumbField ?? null, dates: input.data.dates ?? false, format: input.data.format ?? null, folder: input.data.folder ?? null, bodyField: input.data.bodyField ?? null, single: input.data.single ?? false, updatedAt: new Date() }).where(eq(collections.key, old.key)).returning();
   await log(c, { action: "collection.save", collection: old.key, label: row.label, detail: "changed" });
   return c.json(row);
 });
@@ -248,15 +249,9 @@ async function attach<T extends { id: string }>(c: { env: Env["Bindings"] }, ite
   return items.map((e) => ({ ...e, schedule: by.get(e.id) }));
 }
 
-/** The collection's go-live field, if it has one. */
-const goLiveKey = async (c: { env: Env["Bindings"] }, collection: string) =>
-  (await db(c).select({ f: collections.scheduleField }).from(collections).where(eq(collections.key, collection)))[0]?.f ?? null;
-
-/** Keeps the entry's job in step with its go-live field: a draft with a future time is scheduled; a published entry or any other time is not. */
-async function syncSchedule(c: { env: Env["Bindings"] }, e: { id: string; collection: string; data: Record<string, unknown>; live: unknown }) {
-  const f = await goLiveKey(c, e.collection);
-  await setJob(c.env.DB, "entry.publish", e.id, f && !e.live ? futureTime(e.data[f]) : null);
-}
+/** Keeps the entry's job in step with its go-live time: a draft with a future time is scheduled; a published entry or any other time is not. */
+const syncSchedule = (c: { env: Env["Bindings"] }, e: { id: string; publishAt: Date | null; live: unknown }) =>
+  setJob(c.env.DB, "entry.publish", e.id, e.live ? null : futureTime(e.publishAt));
 
 // A list row's thumbnail: the storage key of its image, straight from an upload field, or looked up through a reference to an image library.
 async function withThumbs(c: { env: Env["Bindings"] }, col: { fields: Field[]; thumbField?: string | null }, rows: Row[]) {
@@ -352,14 +347,14 @@ app.get("/entries/:id", async (c) => {
 app.post("/entries", async (c) => {
   const input = await parseEntry(c, await c.req.json(), true);
   if (!input.value) return c.json(input.error, 400);
-  const row = { ...input.value, id: crypto.randomUUID(), updatedAt: new Date() };
-  const [col] = await db(c).select({ single: collections.single }).from(collections).where(eq(collections.key, row.collection));
+  const [col] = await db(c).select({ single: collections.single, dates: collections.dates }).from(collections).where(eq(collections.key, input.value.collection));
+  const row = { ...input.value, id: crypto.randomUUID(), updatedAt: new Date(), publishAt: col?.dates && input.value.publishAt ? new Date(input.value.publishAt) : null };
   if (col?.single && (await db(c).select({ n: count() }).from(entries).where(eq(entries.collection, row.collection)))[0].n) return c.json({ error: "This collection holds a single entry. Edit that one instead." }, 409);
   try { await db(c).insert(entries).values(row); }
   catch (e) { if (isConflict(e)) return c.json({ error: "slug already exists in this collection" }, 409); throw e; }
   await log(c, { action: "entry.create", collection: row.collection, entryId: row.id, label: await labelOf(c, row) });
   await syncSchedule(c, { ...row, live: null });
-  return c.json((await attach(c, [shape({ ...row, status: "draft", live: null, pending: false })]))[0], 201);
+  return c.json((await attach(c, [shape({ ...row, status: "draft", live: null, pending: false, publishedAt: null, revisedAt: null })]))[0], 201);
 });
 
 app.put("/entries/:id", async (c) => {
@@ -367,9 +362,10 @@ app.put("/entries/:id", async (c) => {
   if (!input.value) return c.json(input.error, 400);
   const [old] = await db(c).select().from(entries).where(eq(entries.id, c.req.param("id")));
   if (!old) return c.json({ error: "not found" }, 404);
-  const gl = await goLiveKey(c, old.collection);
-  if (gl && old.live && JSON.stringify(old.data[gl]) !== JSON.stringify(input.value.data[gl])) return c.json({ error: "The go-live time is locked while the entry is published. Unpublish it first to change it." }, 409);
-  const row = { ...input.value, updatedAt: new Date(), pending: differs(old.live, input.value.slug, input.value.data) };
+  const [col] = await db(c).select({ dates: collections.dates }).from(collections).where(eq(collections.key, old.collection));
+  const given = input.value.publishAt, publishAt = !col?.dates ? null : given === undefined ? old.publishAt : given ? new Date(given) : null;
+  if (old.live && publishAt?.getTime() !== old.publishAt?.getTime()) return c.json({ error: "The go-live time is locked while the entry is published. Unpublish it first to change it." }, 409);
+  const row = { ...input.value, publishAt, updatedAt: new Date(), pending: differs(old.live, input.value.slug, input.value.data) };
   try {
     const [res] = await db(c).update(entries).set(row).where(eq(entries.id, old.id)).returning();
     const changed = [...(old.slug !== res.slug ? ["slug"] : []), ...changedKeys(old.data, res.data)];
@@ -382,11 +378,11 @@ app.put("/entries/:id", async (c) => {
 // Publishing is a separate step from saving: it copies the working draft to `live`, which is what the site gets. Both re-check the draft
 // first (a file or an entry it points at may have gone since it was saved).
 async function publishRow(c: { env: Env["Bindings"] }, row: Row, who: { email: string; via?: string }, via = "") {
-  const f = await goLiveKey(c, row.collection), at = f ? futureTime(row.data[f]) : null;
-  if (f && at) return { error: { error: `This entry is set to go live ${at.toISOString().replace("T", " ").slice(0, 16)} UTC, so it can't be published yet. It publishes itself then; to publish now, set the go-live time to now or clear it.` } };
+  const now = new Date();
+  if (row.publishAt && row.publishAt > now) return { error: { error: `This entry is set to go live ${row.publishAt.toISOString().replace("T", " ").slice(0, 16)} UTC, so it can't be published yet. It publishes itself then; to publish now, set the go-live time to now or clear it.` } };
   const ok = await parseEntry(c, { collection: row.collection, slug: row.slug, data: row.data }, false);
   if (!ok.value) return { error: ok.error };
-  const [res] = await db(c).update(entries).set({ live: { slug: row.slug, data: ok.value.data }, status: "published", pending: false }).where(eq(entries.id, row.id)).returning();
+  const [res] = await db(c).update(entries).set({ live: { slug: row.slug, data: ok.value.data }, status: "published", pending: false, publishedAt: row.publishedAt ?? row.publishAt ?? now, revisedAt: now }).where(eq(entries.id, row.id)).returning();
   await logActivity(c.env.DB, who, { action: "entry.publish", collection: res.collection, entryId: res.id, label: await labelOf(c, res), detail: (row.live ? "changes" : "first time") + via });
   return { res };
 }
@@ -546,9 +542,8 @@ const SCHEDULER = { email: "scheduler" };
 const handlers = (env: Env["Bindings"]) => ({
   "entry.publish": async (job: Job) => {
     const [row] = await db({ env }).select().from(entries).where(eq(entries.id, job.ref));
-    const [col] = row ? await db({ env }).select({ f: collections.scheduleField }).from(collections).where(eq(collections.key, row.collection)) : [];
-    // The entry or its schedule field changed since: the job no longer applies, so drop it.
-    if (!row || !col?.f || futureTime(row.data[col.f], 0)?.getTime() !== job.runAt.getTime()) { await setJob(env.DB, job.kind, job.ref, null); return; }
+    // The entry or its go-live time changed since: the job no longer applies, so drop it.
+    if (!row || !row.publishAt || row.publishAt > job.runAt) { await setJob(env.DB, job.kind, job.ref, null); return; } // (a retry runs later than the go-live time, which is fine)
     const r = await publishRow({ env }, row, SCHEDULER, " (scheduled)");
     if (!r.res) { const e = r.error as { error?: string; formErrors?: string[]; fieldErrors?: Record<string, string[]> }; throw new Error([...(e.error ? [e.error] : []), ...(e.formErrors ?? []), ...Object.values(e.fieldErrors ?? {}).flat()].join("; ") || "The entry no longer validates."); }
     // Queue a deploy of just the entries published this way, so anything else you are holding back stays held back.
