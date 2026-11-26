@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ask } from "./confirm.svelte";
   import { api } from "./api";
   import { store, refreshCollections } from "./store.svelte";
   import { toast } from "./toast.svelte";
@@ -134,7 +135,7 @@
   }
 
   async function remove() {
-    if (!existing || !confirm(`Delete the "${existing.label}" collection?`)) return;
+    if (!existing || !(await ask({ title: `Delete the "${existing.label}" collection?`, confirm: "Delete", danger: true }))) return;
     try { await api.deleteCollection(existing.key); await refreshCollections(); toast("Deleted"); location.hash = "#/"; }
     catch (e) { error = (e as Error).message; }
   }

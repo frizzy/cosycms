@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ask } from "./confirm.svelte";
   import { api, type Person } from "./api";
   import { store } from "./store.svelte";
   import { toast } from "./toast.svelte";
@@ -11,11 +12,11 @@
   }
   async function reinvite(p: Person) { try { link = (await api.reinvite(p.id)).invite; } catch (e) { error = (e as Error).message; } }
   async function setRole(p: Person, role: "owner" | "member") {
-    if (!confirm(role === "owner" ? `Make ${p.email} an owner? They'll be able to change collections, blocks, settings and people.` : `Make ${p.email} a member? They'll lose access to setup.`)) return;
+    if (!(await ask(role === "owner" ? { title: `Make ${p.email} an owner?`, message: "They'll be able to change collections, blocks, settings and people.", confirm: "Make owner" } : { title: `Make ${p.email} a member?`, message: "They'll lose access to setup.", confirm: "Make member" }))) return;
     try { await api.setRole(p.id, role); toast("Updated"); await load(); } catch (e) { error = (e as Error).message; }
   }
   async function removePerson(p: Person) {
-    if (!confirm(`Remove ${p.email}? They are signed out everywhere and their connected apps stop working.`)) return;
+    if (!(await ask({ title: `Remove ${p.email}?`, message: "They are signed out everywhere and their connected apps stop working.", confirm: "Remove", danger: true }))) return;
     try { await api.removePerson(p.id); toast("Removed"); await load(); } catch (e) { error = (e as Error).message; }
   }
 </script>

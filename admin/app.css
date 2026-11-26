@@ -327,3 +327,4 @@ p.notice.sched { display:flex; align-items:center; gap:.5rem; } p.notice.sched.f
 .chg .lines { display:grid; gap:2px; font-size:.9rem; } .chg .lines .same { color:var(--muted); } .chg .lines .gap { color:var(--muted); font-size:.8rem; padding:.1rem .5rem; }
 .chg .sign { display:inline-block; width:1.1rem; color:var(--muted); }
 .chg .chips { display:flex; flex-wrap:wrap; gap:.35rem; } .chg .chip { padding:.15rem .55rem; border-radius:999px; font-size:.85rem; } .chg .chip.del { background:var(--danger-soft); text-decoration:line-through; }
+dialog.ask { width:min(28rem, 92vw); } .ask-msg { margin:0; color:var(--muted); }

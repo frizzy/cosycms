@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ask } from "./confirm.svelte";
   import { tick } from "svelte";
   import { api, type Entry } from "./api";
   import ClockIcon from "./ClockIcon.svelte";
@@ -160,7 +161,7 @@
     } catch (e) { view = { ...review, error: (e as Error).message }; }
   }
   async function unpublish() {
-    if (!id || !confirm("Take this off the site? The draft stays.")) return;
+    if (!id || !(await ask({ title: "Take this off the site?", message: "The draft stays. It comes off the site on the next Deploy.", confirm: "Unpublish" }))) return;
     try {
       ({ published, pending, schedule: sched, publishAt, publishedAt, revisedAt } = await api.unpublishEntry(id));
       liveSnap = null; refreshCounts();
@@ -168,13 +169,13 @@
     } catch (e) { error = (e as Error).message; }
   }
   async function revert() {
-    if (!id || !confirm("Throw away the draft changes and go back to the published version?")) return;
+    if (!id || !(await ask({ title: "Discard the draft changes?", message: "The draft goes back to the published version.", confirm: "Discard changes", danger: true }))) return;
     try { await api.revertEntry(id); store.dirty = false; loading = true; const e = await api.get(id); adopt(e); loading = false; toast("Back to the published version"); refreshCounts(); }
     catch (e) { error = (e as Error).message; loading = false; }
   }
 
   async function remove() {
-    if (!id || !confirm("Delete this entry?")) return;
+    if (!id || !(await ask({ title: "Delete this entry?", confirm: "Delete", danger: true }))) return;
     error = "";
     try { await api.remove(id); } catch (e) { error = (e as Error).message; return; } // e.g. still used by another entry
     store.dirty = false;

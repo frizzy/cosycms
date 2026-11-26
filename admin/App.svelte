@@ -20,6 +20,8 @@
   import NotificationsPage from "./NotificationsPage.svelte";
   import Login from "./Login.svelte";
   import Toasts from "./Toasts.svelte";
+  import ConfirmDialog from "./ConfirmDialog.svelte";
+  import { ask } from "./confirm.svelte";
   import ThemeToggle from "./ThemeToggle.svelte";
   import GearIcon from "./GearIcon.svelte";
   import LogoutIcon from "./LogoutIcon.svelte";
@@ -36,7 +38,13 @@
     let prev = location.hash, reverting = false;
     const on = () => {
       if (reverting) { reverting = false; return; }
-      if (store.dirty && !confirm("You have unsaved changes. Leave without saving?")) { reverting = true; location.hash = prev; return; }
+      if (store.dirty) {
+        // Stay where we are while asking (the dialog can't block the navigation), then go on if the person agrees.
+        const target = location.hash;
+        reverting = true; location.hash = prev;
+        ask({ title: "Leave without saving?", message: "You have unsaved changes.", confirm: "Leave", cancel: "Keep editing", danger: true }).then((ok) => { if (ok) { store.dirty = false; location.hash = target; } });
+        return;
+      }
       prev = hash = location.hash;
       menuOpen = false;
       if (store.me) { refreshCounts(); refreshUnread(); }
@@ -129,4 +137,5 @@
 {/if}
 <Toasts />
 <Lightbox />
+<ConfirmDialog />
 <DeployDialog bind:this={deploy} />

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ask } from "./confirm.svelte";
   import { api } from "./api";
   import { store, refreshCollections } from "./store.svelte";
   import { toast } from "./toast.svelte";
@@ -38,7 +39,7 @@
     busy = false;
   }
   async function remove() {
-    if (!existing || !confirm(`Delete the "${existing.label}" block?`)) return;
+    if (!existing || !(await ask({ title: `Delete the "${existing.label}" block?`, confirm: "Delete", danger: true }))) return;
     try { await api.deleteBlock(existing.key); await refreshCollections(); toast("Deleted"); location.hash = "#/blocks"; }
     catch (e) { error = (e as Error).message; }
   }

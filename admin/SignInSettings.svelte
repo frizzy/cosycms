@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ask } from "./confirm.svelte";
   import { api, type Provider } from "./api";
   import { store } from "./store.svelte";
   import { toast } from "./toast.svelte";
@@ -15,7 +16,7 @@
     try { await api.saveProvider(p.id, draft[p.id].clientId, draft[p.id].secret); toast(`${p.name} saved`); await load(); } catch (e) { error = (e as Error).message; }
   }
   async function remove(p: Provider) {
-    if (!confirm(`Stop offering ${p.name} sign-in? People who use it will need a password.`)) return;
+    if (!(await ask({ title: `Stop offering ${p.name} sign-in?`, message: "People who use it will need a password.", confirm: "Stop offering", danger: true }))) return;
     try { await api.clearProvider(p.id); toast(`${p.name} removed`); await load(); } catch (e) { error = (e as Error).message; }
   }
 </script>

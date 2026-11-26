@@ -2,6 +2,7 @@
   import { Editor } from "@tiptap/core";
   import { blockExtensions, richExtensions } from "./extensions";
   import BlockDialog from "./BlockDialog.svelte";
+  import { ask } from "./confirm.svelte";
   import { blockNodeType, type BlockDef } from "../src/blocks";
   import type { TemplateDef } from "../src/templates";
   import { toMarkdown } from "../src/markdown";
@@ -32,10 +33,11 @@
     blockDlg.open(def, n.attrs.props, (props) => editor!.chain().focus().command(({ tr }) => { tr.setNodeMarkup(pos, undefined, { ...n.attrs, props }); return true; }).run());
   }
   // Removing is undoable (Ctrl/Cmd+Z), so only a block that holds something asks first.
-  function removeBlock(pos: number) {
+  async function removeBlock(pos: number) {
     const n = editor?.state.doc.nodeAt(pos);
     if (!n) return;
-    if (n.textContent.trim() && !confirm("Remove this block and what's inside it?")) return;
+    if (n.textContent.trim() && !(await ask({ title: "Remove this block?", message: "What's inside it is removed too. Ctrl/Cmd+Z brings it back.", confirm: "Remove", danger: true }))) return;
+    if (editor?.state.doc.nodeAt(pos)?.nodeSize !== n.nodeSize) return; // the document changed while the question was open
     editor!.chain().focus().deleteRange({ from: pos, to: pos + n.nodeSize }).run();
   }
   // A template fills a field that is still empty, so only then is it offered.

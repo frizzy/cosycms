@@ -3,6 +3,7 @@
   import { refreshCounts, store } from "./store.svelte";
   import ClockIcon from "./ClockIcon.svelte";
   import { toast } from "./toast.svelte";
+  import { ask } from "./confirm.svelte";
   let { entry }: { entry?: string } = $props(); // narrows the history to one entry
 
   const PHRASE: Record<string, string> = {
@@ -26,7 +27,7 @@
   $effect(() => { entry; load(); });
   const UNDO: Record<string, string> = { "entry.save": "Undo this change", "entry.revert": "Get the discarded draft back", "entry.delete": "Bring it back as a draft", "entry.restore": "Undo this restore" };
   async function undo(a: Activity) {
-    if (!confirm(a.action === "entry.delete" ? "Bring this entry back as a draft?" : "Put the draft back the way it was before this? That replaces the draft as it is now (a published version isn't touched).")) return;
+    if (!(await ask(a.action === "entry.delete" ? { title: "Bring this entry back?", message: "It comes back as a draft.", confirm: "Bring back" } : { title: "Put the draft back the way it was?", message: "That replaces the draft as it is now. A published version isn't touched.", confirm: "Undo" }))) return;
     try { await api.undo(a.id); toast("Done"); await load(); refreshCounts(); } catch (e) { toast((e as Error).message, "error"); }
   }
   const when = (at: string) => new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
