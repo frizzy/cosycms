@@ -80,6 +80,7 @@ const baseDef = z.object({
   format: z.enum(["json", "markdown", "mdx"]).nullish(),
   folder: z.string().nullish(), // where this collection's files are published; empty = a folder named after the collection
   bodyField: z.string().nullish(), // markdown only: the rich text field that becomes the file's body
+  single: z.boolean().optional(), // one entry only
   fields: fieldsSchema,
 });
 
@@ -101,7 +102,7 @@ export const CollectionCreate = baseDef.extend({
   key: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "lowercase letters, numbers and dashes")
     .refine((k) => !RESERVED.includes(k), "reserved name"),
 }).superRefine(checkSlugSource);
-export type Collection = { key: string; label: string; urlTemplate?: string | null; slugSource?: string | null; titleField?: string | null; thumbField?: string | null; format?: "json" | "markdown" | "mdx" | null; folder?: string | null; bodyField?: string | null; fields: Field[] };
+export type Collection = { key: string; label: string; urlTemplate?: string | null; slugSource?: string | null; titleField?: string | null; thumbField?: string | null; format?: "json" | "markdown" | "mdx" | null; folder?: string | null; bodyField?: string | null; single?: boolean; fields: Field[] };
 
 /** Keys of existing fields whose type, single/multi shape or reference target changed; stored data would no longer fit. */
 const shape = (f: Field) =>

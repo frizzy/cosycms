@@ -124,7 +124,7 @@
 </script>
 
 {#snippet state()}{#if id && !loading}<span class="livestate" class:edited={pending || dirty}>{#if published}<LiveIcon />{pending || dirty ? "Published · draft has changes" : "Published"}{:else}Draft{/if}</span>{/if}{/snippet}
-<div class="crumbs"><span class="muted">{c.label}</span>{@render state()}<span class="spacer"></span>{#if id}<a href="#/activity/{id}">History</a>{/if}<a href="#/{collection}">← Back</a></div>
+<div class="crumbs"><span class="muted">{c.label}</span>{@render state()}<span class="spacer"></span>{#if id}<a href="#/activity/{id}">History</a>{/if}{#if !c.single}<a href="#/{collection}">← Back</a>{/if}</div>
 <header><h1>{id ? (c.titleField && String(data[c.titleField] ?? "").trim()) || slug || "Edit" : "New"}</h1></header>
 {#if loading}
   <div class="stack" aria-busy="true" aria-label="Loading">

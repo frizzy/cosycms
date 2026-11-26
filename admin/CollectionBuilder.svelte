@@ -79,6 +79,7 @@
 
   let key = $state(existing?.key ?? ""), label = $state(existing?.label ?? "");
   let keyTouched = $state(!!existing);
+  let single = $state(!!existing?.single);
   let slugSource = $state(existing?.slugSource ?? ""), titleField = $state(existing?.titleField ?? ""), thumbField = $state(existing?.thumbField ?? "");
   let format = $state<"json" | "markdown" | "mdx">(existing?.format ?? "json"), bodyField = $state(existing?.bodyField ?? ""), folder = $state(existing?.folder ?? ""), urlTemplate = $state(existing?.urlTemplate ?? "");
   const isMd = $derived(format === "markdown" || format === "mdx");
@@ -110,7 +111,7 @@
     ev.preventDefault(); error = ""; busy = true;
     try {
       const body = {
-        label, slugSource: sources.some((r) => r.key === slugSource) ? slugSource : undefined, titleField: titles.some((r) => r.key === titleField) ? titleField : null, thumbField: thumbs.some((r) => r.key === thumbField) ? thumbField : null, fields: rows.map(toField),
+        label, single, slugSource: sources.some((r) => r.key === slugSource) ? slugSource : undefined, titleField: titles.some((r) => r.key === titleField) ? titleField : null, thumbField: thumbs.some((r) => r.key === thumbField) ? thumbField : null, fields: rows.map(toField),
         format: format === "json" ? null : format, folder: folder.trim() || null, urlTemplate: urlTemplate.trim() || null,
         bodyField: isMd && richRows.some((r) => r.key === bodyField) ? bodyField : null,
       };
@@ -150,6 +151,10 @@
         {#each sources as r (r.uid)}<option value={r.key}>{r.label || r.key}</option>{/each}
       </select>
       <small class="muted">New entries' slugs follow this field as you type, then lock after the first save.</small>
+    </label>
+
+    <label class="check"><input type="checkbox" bind:checked={single} />Holds a single entry
+      <small class="muted">For a page like the home page or site settings: the list opens that entry directly and a second can't be added.</small>
     </label>
 
     <label>Title shown in lists

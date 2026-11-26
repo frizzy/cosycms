@@ -1,0 +1,1 @@
+ALTER TABLE `collections` ADD `single` integer DEFAULT false NOT NULL;

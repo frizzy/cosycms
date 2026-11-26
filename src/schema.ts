@@ -42,6 +42,7 @@ export const collections = sqliteTable("collections", {
   folder: text(), // published folder; null = the collection key
   urlTemplate: text(), // where an entry lives on the site, e.g. /blog/{slug}; lets links in text point at entries
   bodyField: text(), // markdown: the rich text field written as the file body
+  single: integer({ mode: "boolean" }).notNull().default(false), // holds exactly one entry (a home page, site settings): the list opens it directly and a second can't be added
   fields: text({ mode: "json" }).$type<Field[]>().notNull(),
   updatedAt: integer({ mode: "timestamp_ms" }).notNull(),
 });

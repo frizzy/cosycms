@@ -28,7 +28,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export type Settings = { repo?: string; branch?: string; dir?: string; hasToken: boolean; tokenError?: string };
 export type SettingsInput = { repo: string; branch: string; dir: string; token?: string };
 
-export type CollectionInput = { key?: string; label: string; slugSource?: string | null; titleField?: string | null; thumbField?: string | null; format?: "json" | "markdown" | "mdx" | null; folder?: string | null; bodyField?: string | null; urlTemplate?: string | null; fields: Field[] };
+export type CollectionInput = { key?: string; label: string; slugSource?: string | null; titleField?: string | null; thumbField?: string | null; format?: "json" | "markdown" | "mdx" | null; folder?: string | null; bodyField?: string | null; urlTemplate?: string | null; single?: boolean; fields: Field[] };
 
 export type Me = { id: string; email: string; role: "owner" | "member" };
 export type Person = { id: string; email: string; role: "owner" | "member"; hasPassword: boolean };

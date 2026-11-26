@@ -45,6 +45,8 @@
         if (stale) return;
         // A deletion elsewhere can leave this page past the end: go back to the last real page.
         if (!r.items.length && p > 0) { page = Math.max(0, Math.ceil(r.total / SIZE) - 1); return; }
+        // A single-entry collection has no list worth showing: go to its entry (or to the form for it).
+        if (col.single && !query && !f && r.total <= 1) { location.replace(r.total ? `#/${collection}/${r.items[0].id}` : `#/${collection}/new`); return; }
         rows = r.items; total = r.total; error = ""; busy = false;
       }, (e) => { if (!stale) { error = e.message; busy = false; } });
     }, first ? 0 : 250);
@@ -67,7 +69,7 @@
 
 <header>
   <span class="titlebar"><h1>{col.label}</h1>{#if store.me?.role === "owner"}<a class="icon-btn quiet" href="#/collections/{col.key}" aria-label="Collection settings" title="Collection settings"><GearIcon /></a>{/if}</span>
-  <a class="icon-btn" href="#/{collection}/new" aria-label="New entry" title="New entry"><PlusIcon /></a>
+  {#if !(col.single && total)}<a class="icon-btn" href="#/{collection}/new" aria-label="New entry" title="New entry"><PlusIcon /></a>{/if}
 </header>
 
 <div class="listbar">

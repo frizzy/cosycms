@@ -219,7 +219,7 @@ app.put("/collections/:key", ownerOnly, async (c) => {
   const changed = shapeChanges(old.fields, input.data.fields);
   if (changed.length) return c.json({ error: `type or single/multi can't change for: ${changed.join(", ")}. Add a new field instead.` }, 400);
   // Optional settings are set to null, not undefined, so that clearing them actually clears the column.
-  const [row] = await db(c).update(collections).set({ ...input.data, slugSource: input.data.slugSource ?? null, titleField: input.data.titleField ?? null, urlTemplate: input.data.urlTemplate ?? null, thumbField: input.data.thumbField ?? null, format: input.data.format ?? null, folder: input.data.folder ?? null, bodyField: input.data.bodyField ?? null, updatedAt: new Date() }).where(eq(collections.key, old.key)).returning();
+  const [row] = await db(c).update(collections).set({ ...input.data, slugSource: input.data.slugSource ?? null, titleField: input.data.titleField ?? null, urlTemplate: input.data.urlTemplate ?? null, thumbField: input.data.thumbField ?? null, format: input.data.format ?? null, folder: input.data.folder ?? null, bodyField: input.data.bodyField ?? null, single: input.data.single ?? false, updatedAt: new Date() }).where(eq(collections.key, old.key)).returning();
   await log(c, { action: "collection.save", collection: old.key, label: row.label, detail: "changed" });
   return c.json(row);
 });
@@ -331,6 +331,8 @@ app.post("/entries", async (c) => {
   const input = await parseEntry(c, await c.req.json(), true);
   if (!input.value) return c.json(input.error, 400);
   const row = { ...input.value, id: crypto.randomUUID(), updatedAt: new Date() };
+  const [col] = await db(c).select({ single: collections.single }).from(collections).where(eq(collections.key, row.collection));
+  if (col?.single && (await db(c).select({ n: count() }).from(entries).where(eq(entries.collection, row.collection)))[0].n) return c.json({ error: "This collection holds a single entry. Edit that one instead." }, 409);
   try { await db(c).insert(entries).values(row); }
   catch (e) { if (isConflict(e)) return c.json({ error: "slug already exists in this collection" }, 409); throw e; }
   await log(c, { action: "entry.create", collection: row.collection, entryId: row.id, label: await labelOf(c, row) });
