@@ -44,7 +44,8 @@
 
 <svelte:window onpointerdown={(e) => { if (open && root && !root.contains(e.target as Node)) open = false; }} onkeydown={(e) => { if (open && e.key === "Escape") close(); }} />
 
-<div class="dt" bind:this={root}>
+<!-- The picker lives inside the field's <label>, which forwards a click on any button in it to the first control (the trigger) in Safari, reopening it right after Done closes it. -->
+<div class="dt" bind:this={root} onclick={(e) => { if ((e.target as HTMLElement).closest("button")) e.preventDefault(); }} role="presentation">
   <button type="button" class="dt-trigger" bind:this={trigger} {disabled} aria-haspopup="dialog" aria-expanded={open} onclick={() => (open ? close() : show())}>
     {#if label}{label}{:else}<span class="muted">Pick a date and time</span>{/if}
   </button>

@@ -86,8 +86,8 @@
         <a href="#/{c.key}" class:active={c.key === a}>{c.label}{#if n}<span class="badge" title="{store.counts[c.key].drafts} draft{store.counts[c.key].drafts === 1 ? "" : "s"}, {store.counts[c.key].edited} edited">{n}</span>{/if}</a>
       {/each}
       {#if owner}<a href="#/collections/new" class="icon-btn" aria-label="New collection" title="New collection"><PlusIcon /></a>{/if}
-      <a href="#/notifications" class="navrow" class:active={a === "notifications"}><BellIcon />Notifications{#if store.unread}<span class="badge" title="{store.unread} unread">{store.unread}</span>{/if}</a>
-      <a href="#/activity" class="navrow settings" class:active={a === "activity"}><ActivityIcon />Activity</a>
+      <a href="#/notifications" class="navrow settings" class:active={a === "notifications"}><BellIcon />Notifications{#if store.unread}<span class="badge" title="{store.unread} unread">{store.unread}</span>{/if}</a>
+      <a href="#/activity" class="navrow" class:active={a === "activity"}><ActivityIcon />Activity</a>
       {#if owner}<a href="#/blocks" class="navrow" class:active={a === "blocks"}><BlocksIcon />Blocks</a>{/if}
       {#if owner}<a href="#/templates" class="navrow" class:active={a === "templates"}><TemplatesIcon />Templates</a>{/if}
       <a href="#/settings" class="navrow" class:active={a === "settings"}><GearIcon />Settings</a>
