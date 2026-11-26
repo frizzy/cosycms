@@ -15,6 +15,7 @@
   import TemplateBuilder from "./TemplateBuilder.svelte";
   import SettingsPage from "./SettingsPage.svelte";
   import ActivityPage from "./ActivityPage.svelte";
+  import HomePage from "./HomePage.svelte";
   import ActivityIcon from "./ActivityIcon.svelte";
   import BellIcon from "./BellIcon.svelte";
   import NotificationsPage from "./NotificationsPage.svelte";
@@ -80,7 +81,7 @@
 <div class="layout">
   <nav>
     <div class="bar">
-      <strong><Logo /></strong>
+      <strong><a href="#/" class="brand" aria-label="Home"><Logo /></a></strong>
       <button class="publish" onclick={() => deploy.open()} title="Build what is published and send it to the site">Deploy</button>
       <button type="button" class="icon-btn burger" aria-label={menuOpen ? "Close menu" : "Menu"} aria-expanded={menuOpen} aria-controls="menu" onclick={() => (menuOpen = !menuOpen)}>
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true">
@@ -126,6 +127,8 @@
       {#if b}{#key hash}<BlockBuilder bkey={b !== "new" ? b : undefined} />{/key}{:else}<BlockList />{/if}
     {:else if a === "collections"}
       {#key hash}<CollectionBuilder ckey={b && b !== "new" ? b : undefined} />{/key}
+    {:else if !a}
+      <HomePage />
     {:else if col}
       {#if b}{#key hash}<EntryEditor collection={col.key} id={b === "new" ? undefined : b} />{/key}
       {:else}{#key col.key}<EntryList collection={col.key} />{/key}{/if}
