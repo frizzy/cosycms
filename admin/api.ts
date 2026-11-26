@@ -8,6 +8,7 @@ export type Entry = {
   id: string; collection: string; slug: string;
   published: boolean; pending: boolean; // has a published version; the draft differs from it
   data: Record<string, unknown>; updatedAt: string;
+  schedule?: { at: string; failed: boolean; error?: string }; // goes live at `at` (ISO); `failed` once its attempts ran out
   thumb?: string; // list view only: storage key of the thumbnail image, when the collection has a thumbnail field
 };
 export type EntryInput = Pick<Entry, "collection" | "slug" | "data">;
@@ -28,7 +29,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export type Settings = { repo?: string; branch?: string; dir?: string; hasToken: boolean; tokenError?: string };
 export type SettingsInput = { repo: string; branch: string; dir: string; token?: string };
 
-export type CollectionInput = { key?: string; label: string; slugSource?: string | null; titleField?: string | null; thumbField?: string | null; format?: "json" | "markdown" | "mdx" | null; folder?: string | null; bodyField?: string | null; urlTemplate?: string | null; single?: boolean; fields: Field[] };
+export type CollectionInput = { key?: string; label: string; slugSource?: string | null; titleField?: string | null; thumbField?: string | null; format?: "json" | "markdown" | "mdx" | null; folder?: string | null; bodyField?: string | null; urlTemplate?: string | null; single?: boolean; scheduleField?: string | null; fields: Field[] };
 
 export type Me = { id: string; email: string; role: "owner" | "member" };
 export type Person = { id: string; email: string; role: "owner" | "member"; hasPassword: boolean };
@@ -97,6 +98,7 @@ export const api = {
   counts: () => call<Counts>("/entries/counts"),
   activity: (o: { entry?: string; offset?: number } = {}) => call<{ items: Activity[]; total: number }>(`/activity?limit=50&offset=${o.offset ?? 0}${o.entry ? `&entry=${encodeURIComponent(o.entry)}` : ""}`),
   undo: (id: string) => call<Entry>(`/activity/${id}/undo`, { method: "POST" }),
+  schedule: () => call<{ kind: string; at: string; status: string; error: string | null; entry?: { id: string; collection: string; label: string } }[]>("/schedule"),
   publishEntry: (id: string) => call<Entry>(`/entries/${id}/publish`, { method: "POST" }),
   unpublishEntry: (id: string) => call<Entry>(`/entries/${id}/unpublish`, { method: "POST" }),
   revertEntry: (id: string) => call<Entry>(`/entries/${id}/revert`, { method: "POST" }),

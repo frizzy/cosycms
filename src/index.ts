@@ -3,7 +3,8 @@ import { drizzle } from "drizzle-orm/d1";
 import { getTableColumns } from "drizzle-orm";
 import { and, count, desc, eq, inArray, like, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import { activity, blocks, collections, entries, templates } from "./schema";
+import { activity, blocks, collections, entries, schedule, templates } from "./schema";
+import { futureTime, runDue, setJob, type Job } from "./schedule";
 import { TemplateDef } from "./templates";
 import { changedKeys, logActivity, type Event } from "./activity";
 import { BlockDef, blockLibraries } from "./blocks";
@@ -19,7 +20,7 @@ import { loadGithub, saveGithub } from "./settings";
 import { accountRoutes, authRoutes, humanOnly, ownerOnly, requireAuth } from "./auth";
 import { mcpHandler } from "./mcp";
 
-type Env = { Bindings: { DB: D1Database; BLOBS: R2Bucket; SETTINGS_KEY?: string; GITHUB_CLIENT_ID?: string; GITHUB_CLIENT_SECRET?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string; GITHUB_TOKEN?: string; GITHUB_REPO?: string; GITHUB_BRANCH?: string; GITHUB_DIR?: string }; Variables: { user: { id: string; email: string; role: "owner" | "member"; app?: boolean; via?: string } } };
+type Env = { Bindings: { DB: D1Database; BLOBS: R2Bucket; SETTINGS_KEY?: string; GITHUB_CLIENT_ID?: string; GITHUB_CLIENT_SECRET?: string; GOOGLE_CLIENT_ID?: string; GOOGLE_CLIENT_SECRET?: string; GITHUB_TOKEN?: string; GITHUB_REPO?: string; GITHUB_BRANCH?: string; GITHUB_DIR?: string; TICK_TOKEN?: string }; Variables: { user: { id: string; email: string; role: "owner" | "member"; app?: boolean; via?: string } } };
 const app = new Hono<Env>().basePath("/api");
 
 const Input = z.object({
@@ -219,7 +220,7 @@ app.put("/collections/:key", ownerOnly, async (c) => {
   const changed = shapeChanges(old.fields, input.data.fields);
   if (changed.length) return c.json({ error: `type or single/multi can't change for: ${changed.join(", ")}. Add a new field instead.` }, 400);
   // Optional settings are set to null, not undefined, so that clearing them actually clears the column.
-  const [row] = await db(c).update(collections).set({ ...input.data, slugSource: input.data.slugSource ?? null, titleField: input.data.titleField ?? null, urlTemplate: input.data.urlTemplate ?? null, thumbField: input.data.thumbField ?? null, format: input.data.format ?? null, folder: input.data.folder ?? null, bodyField: input.data.bodyField ?? null, single: input.data.single ?? false, updatedAt: new Date() }).where(eq(collections.key, old.key)).returning();
+  const [row] = await db(c).update(collections).set({ ...input.data, slugSource: input.data.slugSource ?? null, titleField: input.data.titleField ?? null, urlTemplate: input.data.urlTemplate ?? null, thumbField: input.data.thumbField ?? null, scheduleField: input.data.scheduleField ?? null, format: input.data.format ?? null, folder: input.data.folder ?? null, bodyField: input.data.bodyField ?? null, single: input.data.single ?? false, updatedAt: new Date() }).where(eq(collections.key, old.key)).returning();
   await log(c, { action: "collection.save", collection: old.key, label: row.label, detail: "changed" });
   return c.json(row);
 });
@@ -240,8 +241,24 @@ app.get("/entries", async (c) => {
   return c.json((await db(c).select().from(entries).where(and(collection ? eq(entries.collection, collection) : undefined, slug ? eq(entries.slug, slug) : undefined))).map(shape));
 });
 
+// What is scheduled for each entry, so lists and the editor can show it: when it goes live, and whether the attempt failed.
+async function attach<T extends { id: string }>(c: { env: Env["Bindings"] }, items: T[]) {
+  const jobs = items.length ? await db(c).select().from(schedule).where(and(eq(schedule.kind, "entry.publish"), inArray(schedule.ref, items.map((e) => e.id)))) : [];
+  const by = new Map(jobs.filter((j) => j.status !== "done").map((j) => [j.ref, { at: j.runAt.toISOString(), failed: j.status === "failed", error: j.error ?? undefined }]));
+  return items.map((e) => ({ ...e, schedule: by.get(e.id) }));
+}
+
+/** Keeps the entry's job in step with its schedule field: a future time schedules a publish, anything else removes it. */
+async function syncSchedule(c: { env: Env["Bindings"] }, e: { id: string; collection: string; data: Record<string, unknown> }) {
+  const [col] = await db(c).select({ f: collections.scheduleField }).from(collections).where(eq(collections.key, e.collection));
+  await setJob(c.env.DB, "entry.publish", e.id, col?.f ? futureTime(e.data[col.f]) : null);
+}
+
 // A list row's thumbnail: the storage key of its image, straight from an upload field, or looked up through a reference to an image library.
 async function withThumbs(c: { env: Env["Bindings"] }, col: { fields: Field[]; thumbField?: string | null }, rows: Row[]) {
+  return attach(c, await thumbsOf(c, col, rows));
+}
+async function thumbsOf(c: { env: Env["Bindings"] }, col: { fields: Field[]; thumbField?: string | null }, rows: Row[]) {
   const items = rows.map(shape);
   const tf = col.thumbField ? col.fields.find((f) => f.key === col.thumbField) : undefined;
   if (!tf || (tf.type !== "file" && tf.type !== "reference")) return items;
@@ -267,6 +284,7 @@ app.get("/entries/search", async (c) => {
   // filter: draft (never published) | edited (draft differs from published) | attention (either) | empty:<field> (nothing filled in)
   const emptyKey = filter.startsWith("empty:") ? filter.slice(6) : "";
   const filtered = filter === "draft" ? eq(entries.status, "draft") : filter === "edited" ? eq(entries.pending, true) : filter === "attention" ? or(eq(entries.status, "draft"), eq(entries.pending, true))
+    : filter === "scheduled" ? sql`${entries.id} in (select ref from schedule where kind = 'entry.publish' and status != 'done')`
     : emptyKey && col.fields.some((f) => f.key === emptyKey) ? sql`coalesce(trim(cast(${path(emptyKey)} as text)), '') in ('', '[]')` : undefined;
   const match = (e: ReturnType<typeof sql>) => sql`${e} like ${term} escape '\\'`;
   const where = and(eq(entries.collection, collection), filtered, q.trim()
@@ -324,7 +342,7 @@ app.get("/slug-available", async (c) => {
 
 app.get("/entries/:id", async (c) => {
   const [row] = await db(c).select().from(entries).where(eq(entries.id, c.req.param("id")));
-  return row ? c.json(shape(row)) : c.json({ error: "not found" }, 404);
+  return row ? c.json((await attach(c, [shape(row)]))[0]) : c.json({ error: "not found" }, 404);
 });
 
 app.post("/entries", async (c) => {
@@ -336,7 +354,8 @@ app.post("/entries", async (c) => {
   try { await db(c).insert(entries).values(row); }
   catch (e) { if (isConflict(e)) return c.json({ error: "slug already exists in this collection" }, 409); throw e; }
   await log(c, { action: "entry.create", collection: row.collection, entryId: row.id, label: await labelOf(c, row) });
-  return c.json(shape({ ...row, status: "draft", live: null, pending: false }), 201);
+  await syncSchedule(c, row);
+  return c.json((await attach(c, [shape({ ...row, status: "draft", live: null, pending: false })]))[0], 201);
 });
 
 app.put("/entries/:id", async (c) => {
@@ -349,20 +368,26 @@ app.put("/entries/:id", async (c) => {
     const [res] = await db(c).update(entries).set(row).where(eq(entries.id, old.id)).returning();
     const changed = [...(old.slug !== res.slug ? ["slug"] : []), ...changedKeys(old.data, res.data)];
     if (changed.length) await log(c, { action: "entry.save", collection: res.collection, entryId: res.id, label: await labelOf(c, res), detail: changed.join(", "), before: { slug: old.slug, data: old.data } });
-    return c.json(shape(res));
+    await syncSchedule(c, res);
+    return c.json((await attach(c, [shape(res)]))[0]);
   } catch (e) { if (isConflict(e)) return c.json({ error: "slug already exists in this collection" }, 409); throw e; }
 });
 
 // Publishing is a separate step from saving: it copies the working draft to `live`, which is what the site gets. Both re-check the draft
 // first (a file or an entry it points at may have gone since it was saved).
+async function publishRow(c: { env: Env["Bindings"] }, row: Row, who: { email: string; via?: string }, via = "") {
+  const ok = await parseEntry(c, { collection: row.collection, slug: row.slug, data: row.data }, false);
+  if (!ok.value) return { error: ok.error };
+  const [res] = await db(c).update(entries).set({ live: { slug: row.slug, data: ok.value.data }, status: "published", pending: false }).where(eq(entries.id, row.id)).returning();
+  await logActivity(c.env.DB, who, { action: "entry.publish", collection: res.collection, entryId: res.id, label: await labelOf(c, res), detail: (row.live ? "changes" : "first time") + via });
+  return { res };
+}
+
 app.post("/entries/:id/publish", humanOnly, async (c) => {
   const [row] = await db(c).select().from(entries).where(eq(entries.id, c.req.param("id")));
   if (!row) return c.json({ error: "not found" }, 404);
-  const ok = await parseEntry(c, { collection: row.collection, slug: row.slug, data: row.data }, false);
-  if (!ok.value) return c.json(ok.error, 400);
-  const [res] = await db(c).update(entries).set({ live: { slug: row.slug, data: ok.value.data }, status: "published", pending: false }).where(eq(entries.id, row.id)).returning();
-  await log(c, { action: "entry.publish", collection: res.collection, entryId: res.id, label: await labelOf(c, res), detail: row.live ? "changes" : "first time" });
-  return c.json(shape(res));
+  const r = await publishRow(c, row, { email: c.get("user").email, via: c.get("user").via });
+  return r.res ? c.json((await attach(c, [shape(r.res)]))[0]) : c.json(r.error, 400);
 });
 
 // Takes it off the site at the next deploy; the draft stays.
@@ -441,6 +466,7 @@ app.delete("/entries/:id", async (c) => {
     const users = (await usedBy(c, row)).map((u) => `${u.collection}/${u.slug}`);
     if (users.length) return c.json({ error: `Still used by ${users.join(", ")}. Remove it there first.` }, 409);
     await db(c).delete(entries).where(eq(entries.id, row.id));
+    await db(c).delete(schedule).where(eq(schedule.ref, row.id));
     await log(c, { action: "entry.delete", collection: row.collection, entryId: row.id, label: await labelOf(c, row), before: { slug: row.slug, data: row.data } });
   }
   return c.body(null, 204);
@@ -505,11 +531,56 @@ app.get("/ci", humanOnly, async (c) => {
   }
 });
 
+// Scheduled work. entry.publish publishes the entry's latest draft at its go-live time and asks for a deploy; deploy.run sends what is published to the site.
+// Several publishes in one tick share one deploy, and a failed deploy is retried like any other job.
+const SCHEDULER = { email: "scheduler" };
+const handlers = (env: Env["Bindings"]) => ({
+  "entry.publish": async (job: Job) => {
+    const [row] = await db({ env }).select().from(entries).where(eq(entries.id, job.ref));
+    const [col] = row ? await db({ env }).select({ f: collections.scheduleField }).from(collections).where(eq(collections.key, row.collection)) : [];
+    // The entry or its schedule field changed since: the job no longer applies, so drop it.
+    if (!row || !col?.f || futureTime(row.data[col.f], 0)?.getTime() !== job.runAt.getTime()) { await setJob(env.DB, job.kind, job.ref, null); return; }
+    const r = await publishRow({ env }, row, SCHEDULER, " (scheduled)");
+    if (!r.res) { const e = r.error as { formErrors?: string[]; fieldErrors?: Record<string, string[]> }; throw new Error([...(e.formErrors ?? []), ...Object.values(e.fieldErrors ?? {}).flat()].join("; ") || "The entry no longer validates."); }
+    await setJob(env.DB, "deploy.run", "site", new Date());
+  },
+  "deploy.run": async () => {
+    const { token, tokenError, repo, branch, dir } = await loadGithub(env.DB, env);
+    if (tokenError || !token || !repo) throw new Error(tokenError ?? "GitHub target not configured");
+    const r = await publish(env.DB, githubTarget({ token, repo, branch, dir }, fetch, r2Store(env.BLOBS)));
+    await logActivity(env.DB, SCHEDULER, { action: "deploy", detail: r.changed ? `${r.changed} file${r.changed === 1 ? "" : "s"} (scheduled)` : "nothing new" });
+  },
+});
+/** One tick: run what is due, then once more for the jobs that first pass queued (the deploy after a publish). */
+export async function tick(env: Env["Bindings"]) {
+  const h = handlers(env), a = await runDue(env.DB, h), b = await runDue(env.DB, h);
+  return { ran: a.ran + b.ran, ok: a.ok + b.ok };
+}
+
+// Jobs that are waiting or failed, for the Activity page.
+app.get("/schedule", ownerOnly, async (c) => {
+  const jobs = await db(c).select().from(schedule).where(ne(schedule.status, "done")).orderBy(schedule.runAt).limit(100);
+  const rows = await db(c).select({ id: entries.id, collection: entries.collection, slug: entries.slug, data: entries.data }).from(entries).where(inArray(entries.id, jobs.map((j) => j.ref)));
+  const by = new Map(rows.map((r) => [r.id, r]));
+  return c.json(await Promise.all(jobs.map(async (j) => { const e = by.get(j.ref); return { kind: j.kind, at: j.runAt.toISOString(), status: j.status, error: j.error, entry: e && { id: e.id, collection: e.collection, label: await labelOf(c, e) } }; })));
+});
+
 // Sign-in and OAuth routes come first (reachable signed out); everything else under /api needs a session or an access token.
 const root = new Hono<Env>();
 root.route("/", authRoutes);
+// The scheduler's trigger on a server without cron triggers (Docker): something calls this every minute with the TICK_TOKEN.
+root.post("/api/tick", async (c) => {
+  const want = c.env.TICK_TOKEN, got = c.req.header("authorization")?.replace(/^Bearer /, "") ?? "";
+  if (!want) return c.json({ error: "not found" }, 404);
+  if (got.length !== want.length || [...want].reduce((d, ch, i) => d | (ch.charCodeAt(0) ^ got.charCodeAt(i)), 0)) return c.json({ error: "unauthorized" }, 401);
+  return c.json(await tick(c.env));
+});
 root.use("/api/*", requireAuth);
 root.route("/", accountRoutes);
 root.route("/", app);
 root.all("/mcp", (c, next) => (c.req.method === "POST" ? next() : c.body(null, 405, { allow: "POST" })), requireAuth, mcpHandler(root));
-export default root;
+export default {
+  fetch: (req: Request, env: Env["Bindings"], ctx: ExecutionContext) => root.fetch(req, env, ctx),
+  // Cloudflare's cron trigger (see wrangler.jsonc): the same tick the Docker setup reaches through /api/tick.
+  scheduled: (_: ScheduledController, env: Env["Bindings"], ctx: ExecutionContext) => { ctx.waitUntil(tick(env)); },
+};

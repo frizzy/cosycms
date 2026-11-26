@@ -6,6 +6,7 @@
   import { blobUrl } from "../src/images";
   import { store } from "./store.svelte";
   import LiveIcon from "./LiveIcon.svelte";
+  import ClockIcon from "./ClockIcon.svelte";
   let { collection }: { collection: string } = $props();
   const col = $derived(store.collections.find((c) => c.key === collection)!);
   const schema = $derived(dataSchema(col));
@@ -22,7 +23,7 @@
   // Filters, remembered per collection: status ones everywhere, plus "no <field>" for optional fields that can be left empty.
   const FKEY = $derived(`cosy.filter.${collection}`);
   const filters = $derived([
-    { value: "", text: "All" }, { value: "attention", text: "Needs publishing" }, { value: "draft", text: "Drafts" }, { value: "edited", text: "Edited" },
+    { value: "", text: "All" }, { value: "attention", text: "Needs publishing" }, { value: "draft", text: "Drafts" }, { value: "edited", text: "Edited" }, ...(col.scheduleField ? [{ value: "scheduled", text: "Scheduled" }] : []),
     ...col.fields.filter((f) => !f.required && ["text", "textarea", "url", "reference", "file"].includes(f.type)).map((f) => ({ value: `empty:${f.key}`, text: `No ${f.label.toLowerCase()}` })),
   ]);
   const storedFilter = () => { try { return localStorage.getItem(FKEY) ?? ""; } catch { return ""; } };
@@ -74,6 +75,7 @@
   const aria = (key: string) => (sort === key ? (dir === "asc" ? "ascending" : "descending") : "none");
   const pages = $derived(Math.max(1, Math.ceil(total / SIZE)));
   const label = (e: Entry) => (titled ? entryLabel(col.fields, e.data, e.slug, col.titleField) : e.slug);
+  const soon = (e: Entry) => e.schedule && (e.schedule.failed ? "Schedule failed: " + e.schedule.error : "Goes live " + when(e.schedule.at));
   const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 </script>
 
@@ -106,7 +108,7 @@
       {#each shown as e (e.id)}
         <a class="gtile" href="#/{collection}/{e.id}" title={label(e)}>
           {#if e.thumb}<img src={blobUrl(e.thumb)} alt="" loading="lazy" />{:else}<span class="noimg"></span>{/if}
-          <span class="cap"><span class="ell">{label(e)}</span>{#if e.published}<span class:edited={e.pending} title={e.pending ? "Published, with draft changes" : "Published"}><LiveIcon /></span>{/if}</span>
+          <span class="cap"><span class="ell">{label(e)}</span>{#if e.schedule}<span class="sched" class:failed={e.schedule.failed} title={soon(e)}><ClockIcon /></span>{/if}{#if e.published}<span class:edited={e.pending} title={e.pending ? "Published, with draft changes" : "Published"}><LiveIcon /></span>{/if}</span>
         </a>
       {:else}
         <p class="empty">{#if q.trim() || filter}No entries match{q.trim() ? ` “${q.trim()}”` : ""}{filter ? " this filter" : ""}.{:else}Nothing here yet. <a href="#/{collection}/new">Create the first entry.</a>{/if}</p>
@@ -127,6 +129,7 @@
           <td class="name"><div class="cell">
             {#if col.thumbField}{#if e.thumb}<img class="thumb" src={blobUrl(e.thumb)} alt="" loading="lazy" />{:else}<span class="thumb none" aria-hidden="true"></span>{/if}{/if}
             <a class="ell" href="#/{collection}/{e.id}" title={label(e)}>{label(e)}</a>
+            {#if e.schedule}<span class="sched" class:failed={e.schedule.failed} title={soon(e)}><ClockIcon />{e.schedule.failed ? "Schedule failed" : when(e.schedule.at)}</span>{/if}
             {#if !schema.safeParse(e.data).success}<span class="warn" title="Doesn't match the current fields — open and fix it">⚠ needs attention</span>{/if}
           </div></td>
           <td class="c-status">{#if e.published}<span class:edited={e.pending} title={e.pending ? "Published, with changes in the draft that aren't live yet" : "Has a published version"}><LiveIcon />{e.pending ? "Edited" : "Published"}</span>{:else}Draft{/if}</td><td class="c-updated">{when(e.updatedAt)}</td>

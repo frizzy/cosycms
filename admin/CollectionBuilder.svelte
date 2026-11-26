@@ -80,7 +80,7 @@
   let key = $state(existing?.key ?? ""), label = $state(existing?.label ?? "");
   let keyTouched = $state(!!existing);
   let single = $state(!!existing?.single);
-  let slugSource = $state(existing?.slugSource ?? ""), titleField = $state(existing?.titleField ?? ""), thumbField = $state(existing?.thumbField ?? "");
+  let slugSource = $state(existing?.slugSource ?? ""), titleField = $state(existing?.titleField ?? ""), thumbField = $state(existing?.thumbField ?? ""), scheduleField = $state(existing?.scheduleField ?? "");
   let format = $state<"json" | "markdown" | "mdx">(existing?.format ?? "json"), bodyField = $state(existing?.bodyField ?? ""), folder = $state(existing?.folder ?? ""), urlTemplate = $state(existing?.urlTemplate ?? "");
   const isMd = $derived(format === "markdown" || format === "mdx");
   let rows = $state<Row[]>(existing ? existing.fields.map(toRow) : []);
@@ -88,6 +88,7 @@
   // Only text fields can feed a slug. Derived from the live rows so newly added fields show up.
   const richRows = $derived(rows.filter((r) => r.type === "richtext" && r.key));
   const thumbs = $derived(rows.filter((r) => (r.type === "file" || r.type === "reference") && r.key));
+  const dates = $derived(rows.filter((r) => r.type === "datetime" && r.key));
   const titles = $derived(rows.filter((r) => r.type === "text" && r.key));
   const sources = $derived(rows.filter((r) => (r.type === "text" || r.type === "textarea") && r.key));
 
@@ -111,7 +112,7 @@
     ev.preventDefault(); error = ""; busy = true;
     try {
       const body = {
-        label, single, slugSource: sources.some((r) => r.key === slugSource) ? slugSource : undefined, titleField: titles.some((r) => r.key === titleField) ? titleField : null, thumbField: thumbs.some((r) => r.key === thumbField) ? thumbField : null, fields: rows.map(toField),
+        label, single, slugSource: sources.some((r) => r.key === slugSource) ? slugSource : undefined, titleField: titles.some((r) => r.key === titleField) ? titleField : null, thumbField: thumbs.some((r) => r.key === thumbField) ? thumbField : null, scheduleField: dates.some((r) => r.key === scheduleField) ? scheduleField : null, fields: rows.map(toField),
         format: format === "json" ? null : format, folder: folder.trim() || null, urlTemplate: urlTemplate.trim() || null,
         bodyField: isMd && richRows.some((r) => r.key === bodyField) ? bodyField : null,
       };
@@ -171,6 +172,14 @@
         {#each thumbs as r (r.uid)}<option value={r.key}>{r.label || r.key}</option>{/each}
       </select>
       <small class="muted">An image field, or a reference to an image library, shown as a small picture beside each entry.</small>
+    </label>
+
+    <label>Go-live time
+      <select bind:value={scheduleField}>
+        <option value="">None</option>
+        {#each dates as r (r.uid)}<option value={r.key}>{r.label || r.key}</option>{/each}
+      </select>
+      <small class="muted">A date and time field. Set it to a future time and the entry is published, and the site deployed, at that time. A time in the past does nothing; publish by hand.</small>
     </label>
 
     <label>Publish as

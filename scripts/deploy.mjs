@@ -71,13 +71,17 @@ mkdir -p data certs`);
   // 2. Secrets in .dev.vars: only what is missing is added.
   const cur = sh(o.host, `cat ${D}/.dev.vars 2>/dev/null || true`).stdout;
   const fresh = !/^SETTINGS_KEY=./m.test(cur);
-  const { text, added } = mergeEnv(cur, { SETTINGS_KEY: o.settingsKey ?? secret(), ...(o.setupToken || fresh ? { SETUP_TOKEN: o.setupToken ?? secret() } : {}) });
+  const { text, added } = mergeEnv(cur, { SETTINGS_KEY: o.settingsKey ?? secret(), TICK_TOKEN: secret(), ...(o.setupToken || fresh ? { SETUP_TOKEN: o.setupToken ?? secret() } : {}) });
   if (added.length) {
     const w = sh(o.host, `echo ${Buffer.from(text).toString("base64")} | base64 -d > ${D}/.dev.vars && chmod 600 ${D}/.dev.vars`);
     if (w.status !== 0) { report.error = `Writing .dev.vars failed: ${out(w)}`; return; }
     report.created = added;
     if (added.includes("SETUP_TOKEN")) report.setupToken = text.match(/^SETUP_TOKEN=(.*)$/m)[1]; // shown once: it creates the owner account on a public address
   }
+
+  // The scheduler (scheduled publishing) needs something to call it every minute; a Docker host has no cron trigger, so use the host's cron.
+  const cron = sh(o.host, `chmod +x ${D}/scripts/tick.sh; (crontab -l 2>/dev/null | grep -v 'scripts/tick.sh'; echo "* * * * * ${dir}/scripts/tick.sh >/dev/null 2>&1") | crontab -`);
+  report.scheduler = cron.status === 0 ? "cron installed" : `could not install the cron job: ${out(cron)}`;
 
   // 3. Self-signed certificate for the local HTTPS the Worker needs (see Dockerfile), then build and start.
   say("Building and starting (the first build takes a few minutes)…");

@@ -43,6 +43,7 @@ export const collections = sqliteTable("collections", {
   urlTemplate: text(), // where an entry lives on the site, e.g. /blog/{slug}; lets links in text point at entries
   bodyField: text(), // markdown: the rich text field written as the file body
   single: integer({ mode: "boolean" }).notNull().default(false), // holds exactly one entry (a home page, site settings): the list opens it directly and a second can't be added
+  scheduleField: text(), // key of the datetime field that says when an entry goes live; a future time publishes (and deploys) it then
   fields: text({ mode: "json" }).$type<Field[]>().notNull(),
   updatedAt: integer({ mode: "timestamp_ms" }).notNull(),
 });
@@ -105,3 +106,15 @@ export const activity = sqliteTable("activity", {
   detail: text(),
   before: text({ mode: "json" }).$type<{ slug: string; data: Record<string, unknown> } | null>(), // an entry's draft just before the change, so it can be undone (see /activity/:id/undo)
 }, (t) => [index("activity_at").on(t.at), index("activity_entry").on(t.entryId, t.at)]);
+
+// Things to do later, one row per job. A tick every minute runs what is due (see src/schedule.ts); the row is the "wait".
+export const schedule = sqliteTable("schedule", {
+  id: text().primaryKey(),
+  kind: text().notNull(),  // which handler runs it: entry.publish, deploy.run, ...
+  ref: text().notNull(),   // what it is about, e.g. an entry id; one job per (kind, ref)
+  runAt: integer({ mode: "timestamp_ms" }).notNull(),
+  status: text({ enum: ["pending", "running", "done", "failed"] }).notNull().default("pending"),
+  attempts: integer().notNull().default(0),
+  error: text(),
+  updatedAt: integer({ mode: "timestamp_ms" }).notNull(),
+}, (t) => [uniqueIndex("schedule_job").on(t.kind, t.ref), index("schedule_due").on(t.status, t.runAt)]);

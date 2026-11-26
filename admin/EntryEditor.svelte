@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { api } from "./api";
+  import { api, type Entry } from "./api";
+  import ClockIcon from "./ClockIcon.svelte";
   import { slugify } from "../src/fields";
   import { store, refreshCounts } from "./store.svelte";
   import { toast } from "./toast.svelte";
@@ -12,7 +13,7 @@
 
   const c = store.collections.find((x) => x.key === collection)!;
   let slug = $state("");
-  let published = $state(false), pending = $state(false); // has a published version; the draft has moved on from it
+  let published = $state(false), pending = $state(false), sched = $state<Entry["schedule"]>(); // has a published version; the draft has moved on from it
   let data = $state<Record<string, unknown>>({});
   let loading = $state(!!id);
   let saving = $state(false);
@@ -68,7 +69,7 @@
 
   $effect(() => {
     if (!id) return;
-    api.get(id).then((e) => { savedSlug = e.slug; ({ slug, data, published, pending } = e); loading = false; }, (e) => { error = e.message; loading = false; });
+    api.get(id).then((e) => { savedSlug = e.slug; ({ slug, data, published, pending, schedule: sched } = e); loading = false; }, (e) => { error = e.message; loading = false; });
   });
 
   // Where this entry is used (an image in a post, a link from another entry): shown below the form when there is anything.
@@ -86,7 +87,7 @@
     try {
       const body = { collection, slug, data: clean };
       let target = id;
-      if (id) { const e = await api.update(id, body); ({ published, pending } = e); refreshCounts(); } else target = (await api.create(body)).id;
+      if (id) { const e = await api.update(id, body); ({ published, pending, schedule: sched } = e); refreshCounts(); } else target = (await api.create(body)).id;
       savedSlug = slug; if (source) locked = true;
       rebase(); store.dirty = false; // clean before navigating so the leave-guard stays quiet
       location.hash = `#/${collection}/${target}`;
@@ -101,7 +102,7 @@
   // Publishing saves any open edits first, then makes the draft the live version.
   async function publish() {
     if (!id || (dirty && !(await persist()))) return;
-    try { ({ published, pending } = await api.publishEntry(id)); toast("Published. It goes to the site on the next Deploy."); refreshCounts(); } catch (e) { error = (e as Error).message; }
+    try { ({ published, pending, schedule: sched } = await api.publishEntry(id)); toast("Published. It goes to the site on the next Deploy."); refreshCounts(); } catch (e) { error = (e as Error).message; }
   }
   async function unpublish() {
     if (!id || !confirm("Take this off the site? The draft stays.")) return;
@@ -109,7 +110,7 @@
   }
   async function revert() {
     if (!id || !confirm("Throw away the draft changes and go back to the published version?")) return;
-    try { await api.revertEntry(id); store.dirty = false; loading = true; const e = await api.get(id); savedSlug = e.slug; ({ slug, data, published, pending } = e); loading = false; toast("Back to the published version"); refreshCounts(); }
+    try { await api.revertEntry(id); store.dirty = false; loading = true; const e = await api.get(id); savedSlug = e.slug; ({ slug, data, published, pending, schedule: sched } = e); loading = false; toast("Back to the published version"); refreshCounts(); }
     catch (e) { error = (e as Error).message; loading = false; }
   }
 
@@ -125,6 +126,12 @@
 
 {#snippet state()}{#if id && !loading}<span class="livestate" class:edited={pending || dirty}>{#if published}<LiveIcon />{pending || dirty ? "Published · draft has changes" : "Published"}{:else}Draft{/if}</span>{/if}{/snippet}
 <div class="crumbs"><span class="muted">{c.label}</span>{@render state()}<span class="spacer"></span>{#if id}<a href="#/activity/{id}">History</a>{/if}{#if !c.single}<a href="#/{collection}">← Back</a>{/if}</div>
+{#if sched}
+  <p class="notice sched" class:failed={sched.failed}>
+    {#if sched.failed}<strong>Scheduled publish failed.</strong> {sched.error} Fix it and save to try again.
+    {:else}<ClockIcon />Scheduled: publishes and deploys {new Date(sched.at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}. Clear the go-live time to cancel.{/if}
+  </p>
+{/if}
 <header><h1>{id ? (c.titleField && String(data[c.titleField] ?? "").trim()) || slug || "Edit" : "New"}</h1></header>
 {#if loading}
   <div class="stack" aria-busy="true" aria-label="Loading">

@@ -303,3 +303,6 @@ dialog.lightbox { width:auto; max-width:94vw; padding:.75rem; background:transpa
 dialog.lightbox img { max-width:92vw; max-height:82vh; object-fit:contain; border-radius:8px; background:var(--surface); } dialog.lightbox p { margin:.6rem 0 0; color:#fff; font-size:.9rem; }
 .logo { display:inline-flex; align-items:center; gap:.45rem; } .logo svg { flex:none; }
 .listbar > button[aria-pressed=true] { background:var(--accent-soft); color:var(--accent-text); font-weight:600; }
+.sched { display:inline-flex; align-items:center; gap:.3rem; margin-left:.6rem; color:var(--accent-text); font-size:.85em; } .sched.failed { color:var(--danger); }
+p.notice.sched { display:flex; align-items:center; gap:.5rem; } p.notice.sched.failed { background:var(--danger-soft); color:var(--danger); }
+.queued ul { list-style:none; padding:0; margin:.4rem 0 1.5rem; display:grid; gap:.35rem; } .queued li { display:flex; gap:.4rem; align-items:center; flex-wrap:wrap; }
