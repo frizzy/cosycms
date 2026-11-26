@@ -24,3 +24,11 @@ test("without dates the keys are not added", () => {
   const plain: RenderCtx = { collections: new Map([["posts", { fields: col(null).fields, format: "markdown" }]]), entries: new Map() };
   assert.doesNotMatch(render(entry, plain).content, /publishedAt/);
 });
+
+import { githubFailedStep } from "./github.ts";
+test("a failed run is described by its job and step", async () => {
+  const body = { jobs: [{ name: "lint", conclusion: "success", steps: [] }, { name: "build", conclusion: "failure", steps: [{ name: "Checkout", conclusion: "success" }, { name: "Build site", conclusion: "failure" }] }] };
+  const f = (async () => new Response(JSON.stringify(body))) as unknown as typeof fetch;
+  assert.equal(await githubFailedStep({ token: "t", repo: "o/r" }, 7, f), "build › Build site");
+  assert.equal(await githubFailedStep({ token: "t", repo: "o/r" }, 7, (async () => new Response(JSON.stringify({ jobs: [] }))) as unknown as typeof fetch), undefined);
+});

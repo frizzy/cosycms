@@ -123,3 +123,16 @@ export const schedule = sqliteTable("schedule", {
   payload: text({ mode: "json" }).$type<string[]>(), // deploy.run: the entries it may send (the ones the scheduler published)
   updatedAt: integer({ mode: "timestamp_ms" }).notNull(),
 }, (t) => [uniqueIndex("schedule_job").on(t.kind, t.ref), index("schedule_due").on(t.status, t.runAt)]);
+
+// Things an admin should hear about even if they weren't watching: a failed site build, a scheduled job that gave up. One row per (kind, ref), so a repeat updates it.
+export const notifications = sqliteTable("notifications", {
+  id: text().primaryKey(),
+  at: integer({ mode: "timestamp_ms" }).notNull(),
+  kind: text().notNull(),  // ci (a site build), job (a scheduled job), ci-access (can't read build results)
+  ref: text().notNull(),   // what it is about: a commit, a job id
+  level: text({ enum: ["error", "success", "info"] }).notNull(),
+  title: text().notNull(),
+  body: text(),
+  link: text(),            // an https address, or an admin route like #/posts/<id>
+  readAt: integer({ mode: "timestamp_ms" }),
+}, (t) => [uniqueIndex("notifications_ref").on(t.kind, t.ref), index("notifications_at").on(t.at)]);

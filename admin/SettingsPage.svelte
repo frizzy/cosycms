@@ -4,12 +4,13 @@
   import SignInSettings from "./SignInSettings.svelte";
   import PeopleSettings from "./PeopleSettings.svelte";
   import AppsSettings from "./AppsSettings.svelte";
+  import NotifySettings from "./NotifySettings.svelte";
 
   let { section }: { section?: string } = $props();
   const owner = $derived(store.me?.role === "owner");
   // Everyone sees their own connected apps; the rest is the owner's.
   const tabs = $derived([
-    ...(owner ? [{ id: "publishing", label: "Deploy" }, { id: "signin", label: "Sign-in" }, { id: "people", label: "People" }] : []),
+    ...(owner ? [{ id: "publishing", label: "Deploy" }, { id: "signin", label: "Sign-in" }, { id: "people", label: "People" }, { id: "notifications", label: "Notifications" }] : []),
     { id: "apps", label: "Connected apps" },
   ]);
   const current = $derived(tabs.find((t) => t.id === section)?.id ?? tabs[0].id);
@@ -22,4 +23,5 @@
 {#if current === "publishing"}<PublishSettings />
 {:else if current === "signin"}<SignInSettings />
 {:else if current === "people"}<PeopleSettings />
+{:else if current === "notifications"}<NotifySettings />
 {:else}<AppsSettings />{/if}

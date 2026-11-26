@@ -314,3 +314,9 @@ p.notice.sched { display:flex; align-items:center; gap:.5rem; } p.notice.sched.f
 .dt-day { padding:.4rem 0; font:400 .9rem var(--sans); background:transparent; color:var(--ink); border-radius:6px; } .dt-day:hover { background:var(--accent-soft); }
 .dt-day.now { outline:1px solid var(--control); } .dt-day.sel { background:var(--accent); color:var(--accent-ink); font-weight:600; }
 .dt-foot { display:flex; align-items:center; gap:.5rem; } .dt-foot label { display:flex; align-items:center; gap:.4rem; margin-right:auto; } .dt-foot input { width:auto; padding:.35rem .5rem; }
+.notices { list-style:none; padding:0; margin:0; display:grid; gap:.6rem; }
+.notices li { display:flex; gap:.7rem; padding:.7rem .9rem; border:1px solid var(--line); border-radius:8px; background:var(--surface); }
+.notices li.unread { border-color:var(--line-strong); background:var(--accent-soft); }
+.notices .mark { flex:none; width:1.4rem; height:1.4rem; border-radius:50%; display:grid; place-items:center; font-size:.8rem; font-weight:700; background:var(--line); }
+.notices li.lv-error .mark { background:var(--danger-soft); color:var(--danger); } .notices li.lv-success .mark { background:var(--accent-soft); color:var(--ok); }
+.notices .meta { display:flex; gap:.9rem; flex-wrap:wrap; margin-top:.2rem; font-size:.85rem; color:var(--muted); }

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api } from "./api";
-  import { store, refreshCollections, refreshCounts } from "./store.svelte";
+  import { store, refreshCollections, refreshCounts, refreshUnread } from "./store.svelte";
   import EntryList from "./EntryList.svelte";
   import EntryEditor from "./EntryEditor.svelte";
   import CollectionBuilder from "./CollectionBuilder.svelte";
@@ -16,6 +16,8 @@
   import SettingsPage from "./SettingsPage.svelte";
   import ActivityPage from "./ActivityPage.svelte";
   import ActivityIcon from "./ActivityIcon.svelte";
+  import BellIcon from "./BellIcon.svelte";
+  import NotificationsPage from "./NotificationsPage.svelte";
   import Login from "./Login.svelte";
   import Toasts from "./Toasts.svelte";
   import ThemeToggle from "./ThemeToggle.svelte";
@@ -37,13 +39,15 @@
       if (store.dirty && !confirm("You have unsaved changes. Leave without saving?")) { reverting = true; location.hash = prev; return; }
       prev = hash = location.hash;
       menuOpen = false;
-      if (store.me) refreshCounts();
+      if (store.me) { refreshCounts(); refreshUnread(); }
     };
     addEventListener("hashchange", on);
     api.me().then((me) => (store.me = me));
     return () => removeEventListener("hashchange", on);
   });
-  $effect(() => { if (store.me) { refreshCollections(); refreshCounts(); } });
+  $effect(() => { if (store.me) { refreshCollections(); refreshCounts(); refreshUnread(); } });
+  // Builds finish and jobs fail while nobody is looking: check for new notifications now and then.
+  $effect(() => { if (!store.me) return; const t = setInterval(refreshUnread, 60_000); return () => clearInterval(t); });
   // First run: an owner with no social sign-in yet is taken to set one up, and reminded until they do.
   $effect(() => {
     if (store.me?.role !== "owner") return;
@@ -82,6 +86,7 @@
         <a href="#/{c.key}" class:active={c.key === a}>{c.label}{#if n}<span class="badge" title="{store.counts[c.key].drafts} draft{store.counts[c.key].drafts === 1 ? "" : "s"}, {store.counts[c.key].edited} edited">{n}</span>{/if}</a>
       {/each}
       {#if owner}<a href="#/collections/new" class="icon-btn" aria-label="New collection" title="New collection"><PlusIcon /></a>{/if}
+      <a href="#/notifications" class="navrow" class:active={a === "notifications"}><BellIcon />Notifications{#if store.unread}<span class="badge" title="{store.unread} unread">{store.unread}</span>{/if}</a>
       <a href="#/activity" class="navrow settings" class:active={a === "activity"}><ActivityIcon />Activity</a>
       {#if owner}<a href="#/blocks" class="navrow" class:active={a === "blocks"}><BlocksIcon />Blocks</a>{/if}
       {#if owner}<a href="#/templates" class="navrow" class:active={a === "templates"}><TemplatesIcon />Templates</a>{/if}
@@ -101,6 +106,8 @@
       <p class="error">{store.error}</p>
     {:else if !owner && (a === "blocks" || a === "templates" || a === "collections")}
       <p class="muted">Only an owner can change collections, blocks and templates.</p>
+    {:else if a === "notifications"}
+      <NotificationsPage />
     {:else if a === "activity"}
       {#key hash}<ActivityPage entry={b} />{/key}
     {:else if a === "settings"}

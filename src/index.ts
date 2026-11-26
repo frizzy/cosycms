@@ -1,16 +1,17 @@
 import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { getTableColumns } from "drizzle-orm";
-import { and, count, desc, eq, inArray, like, ne, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, like, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import { activity, blocks, collections, entries, schedule, templates } from "./schema";
+import { activity, blocks, collections, entries, notifications, schedule, settings, templates } from "./schema";
+import { notify, successWanted } from "./notifications";
 import { futureTime, runDue, setJob, type Job } from "./schedule";
 import { TemplateDef } from "./templates";
 import { changedKeys, logActivity, type Event } from "./activity";
 import { BlockDef, blockLibraries } from "./blocks";
 import { CollectionCreate, CollectionDef, dataSchema, entryLabel, fileFieldOf, nextFreeSlug, shapeChanges, slugBase, type Field } from "./fields";
 import { bodyLimit } from "hono/body-limit";
-import { githubCheck, githubRuns, githubTarget } from "./github";
+import { githubCheck, githubFailedStep, githubRuns, githubTarget } from "./github";
 import { r2Store } from "./blobs";
 import { KEY_RE, MAX_IMAGE_BYTES, blobKey, blobUrl, sniffImage } from "./images";
 import { docBlockNames, docImageIds, docLinkIds, fillPictures } from "./markdown";
@@ -518,6 +519,7 @@ app.post("/publish", humanOnly, async (c) => {
   try {
     const r = await publish(c.env.DB, githubTarget({ token, repo, branch, dir }, fetch, r2Store(c.env.BLOBS)));
     await log(c, { action: "deploy", detail: r.changed ? `${r.changed} file${r.changed === 1 ? "" : "s"}` : "nothing new" });
+    if (r.ref) await watchBuild(c.env.DB, r.ref);
     return c.json(r);
   }
   catch (e) { return c.json({ error: (e as Error).message }, 424); }
@@ -534,6 +536,22 @@ app.get("/ci", humanOnly, async (c) => {
     const s = (e as { status?: number }).status, why = (e as Error).message.match(/"message":\s*"([^"]*)"/)?.[1];
     return c.json({ error: s === 403 || s === 404 ? `GitHub refused the request${why ? ` (${why})` : ""}. The token needs Actions: read on ${repo}.` : (e as Error).message }, 424);
   }
+});
+
+// Notifications: newest first, with how many are unread. Dismissing deletes; reading keeps them in the list.
+app.get("/notifications", humanOnly, async (c) => {
+  const items = await db(c).select().from(notifications).orderBy(desc(notifications.at)).limit(100);
+  const [{ n }] = await db(c).select({ n: count() }).from(notifications).where(isNull(notifications.readAt));
+  return c.json({ items, unread: n });
+});
+app.post("/notifications/read", humanOnly, async (c) => { await db(c).update(notifications).set({ readAt: new Date() }).where(isNull(notifications.readAt)); return c.body(null, 204); });
+app.post("/notifications/:id/read", humanOnly, async (c) => { await db(c).update(notifications).set({ readAt: new Date() }).where(eq(notifications.id, c.req.param("id"))); return c.body(null, 204); });
+app.delete("/notifications/:id", humanOnly, async (c) => { await db(c).delete(notifications).where(eq(notifications.id, c.req.param("id"))); return c.body(null, 204); });
+app.get("/settings/notifications", humanOnly, async (c) => c.json({ success: await successWanted(c.env.DB) }));
+app.put("/settings/notifications", ownerOnly, async (c) => {
+  const { success } = z.object({ success: z.boolean() }).parse(await c.req.json());
+  await db(c).insert(settings).values({ key: "notify.success", value: success ? "1" : "0" }).onConflictDoUpdate({ target: settings.key, set: { value: success ? "1" : "0" } });
+  return c.body(null, 204);
 });
 
 // Scheduled work. entry.publish publishes the entry's latest draft at its go-live time and asks for a deploy; deploy.run sends what is published to the site.
@@ -555,11 +573,47 @@ const handlers = (env: Env["Bindings"]) => ({
     if (tokenError || !token || !repo) throw new Error(tokenError ?? "GitHub target not configured");
     const r = await publish(env.DB, githubTarget({ token, repo, branch, dir }, fetch, r2Store(env.BLOBS)), job.payload ?? []);
     await logActivity(env.DB, SCHEDULER, { action: "deploy", detail: r.changed ? `${r.changed} file${r.changed === 1 ? "" : "s"} (scheduled)` : "nothing new" });
+    if (r.ref) await watchBuild(env.DB, r.ref);
+  },
+  // Follows the site's build for one deploy until it finishes, then records the result. Polls about once a minute (a tick is a minute apart).
+  "ci.check": async (job: Job) => {
+    const { token, repo, branch, dir } = await loadGithub(env.DB, env);
+    if (!token || !repo) return;
+    const o = { token, repo, branch, dir }, age = Date.now() - (Date.parse(job.payload?.[0] ?? "") || Date.now()), short = job.ref.slice(0, 7);
+    let st;
+    try { st = await githubRuns(o, job.ref); }
+    catch (e) {
+      const s = (e as { status?: number }).status;
+      if (s !== 403 && s !== 404) throw e;
+      await notify(env.DB, { kind: "ci-access", ref: "token", level: "error", title: "Can't check the site build", body: `GitHub refused the request. The token needs Actions: read on ${repo}. Settings > Deploy has a Check access button.`, link: "#/settings" });
+      return;
+    }
+    if (st.state === "running" || (st.state === "none" && age < 3 * 60_000)) { // not finished, or the run hasn't appeared yet
+      if (age > 30 * 60_000) await notify(env.DB, { kind: "ci", ref: job.ref, level: "error", title: "Site build didn't finish", body: `Deploy ${short} was still running after 30 minutes.`, link: `https://github.com/${repo}/commit/${job.ref}` });
+      else await setJob(env.DB, job.kind, job.ref, new Date(Date.now() + 45_000), job.payload);
+      return;
+    }
+    if (st.state === "none") return; // the repository builds nothing on a push: nothing to report
+    const run = st.runs.find((r) => r.state === "failed") ?? st.runs[0];
+    if (st.state === "failed") {
+      const step = await githubFailedStep(o, run.id).catch(() => undefined);
+      await notify(env.DB, { kind: "ci", ref: job.ref, level: "error", title: "Site build failed", body: `Deploy ${short}${step ? `: ${step} failed` : ""}.`, link: run.url });
+    } else {
+      await db({ env }).update(notifications).set({ readAt: new Date() }).where(and(eq(notifications.kind, "ci"), eq(notifications.level, "error"), isNull(notifications.readAt))); // a passing build clears earlier failures
+      if (await successWanted(env.DB)) await notify(env.DB, { kind: "ci", ref: job.ref, level: "success", title: "Site build passed", body: `Deploy ${short}.`, link: run.url });
+    }
   },
 });
+
+/** After a deploy, follow its build (see ci.check). */
+const watchBuild = (d1: D1Database, sha: string) => setJob(d1, "ci.check", sha, new Date(Date.now() + 20_000), [new Date().toISOString()]);
 /** One tick: run what is due, then once more for the jobs that first pass queued (the deploy after a publish). */
 export async function tick(env: Env["Bindings"]) {
-  const h = handlers(env), a = await runDue(env.DB, h), b = await runDue(env.DB, h);
+  const h = handlers(env), failed = async (job: Job, error: string) => {
+    const [e] = job.kind === "entry.publish" ? await db({ env }).select().from(entries).where(eq(entries.id, job.ref)) : [];
+    await notify(env.DB, { kind: "job", ref: job.id, level: "error", title: e ? `Scheduled publish failed: ${await labelOf({ env }, e)}` : job.kind === "deploy.run" ? "Scheduled deploy failed" : `${job.kind} failed`, body: error, link: e ? `#/${e.collection}/${e.id}` : undefined });
+  };
+  const a = await runDue(env.DB, h, Date.now(), failed), b = await runDue(env.DB, h, Date.now(), failed);
   return { ran: a.ran + b.ran, ok: a.ok + b.ok };
 }
 

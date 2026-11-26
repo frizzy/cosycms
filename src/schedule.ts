@@ -27,7 +27,7 @@ export async function setJob(d1: D1Database, kind: string, ref: string, runAt: D
 }
 
 /** Runs every job that is due. Returns how many ran and how many of those succeeded. */
-export async function runDue(d1: D1Database, handlers: Record<string, Handler>, now = Date.now()) {
+export async function runDue(d1: D1Database, handlers: Record<string, Handler>, now = Date.now(), onFailed?: (job: Job, error: string) => Promise<void>) {
   const d = drizzle(d1), stale = new Date(now - STALE_MS);
   const due = await d.select().from(schedule).where(and(lte(schedule.runAt, new Date(now)), or(eq(schedule.status, "pending"), and(eq(schedule.status, "running"), lte(schedule.updatedAt, stale))))).orderBy(asc(schedule.runAt)).limit(50);
   let ran = 0, ok = 0;
@@ -45,7 +45,9 @@ export async function runDue(d1: D1Database, handlers: Record<string, Handler>, 
       ok++;
     } catch (e) {
       const retry = job.attempts < MAX_ATTEMPTS;
-      await d.update(schedule).set({ status: retry ? "pending" : "failed", error: (e as Error).message.slice(0, 500), runAt: retry ? new Date(now + backoff(job.attempts)) : job.runAt, updatedAt: new Date() }).where(eq(schedule.id, job.id));
+      const message = (e as Error).message.slice(0, 500);
+      await d.update(schedule).set({ status: retry ? "pending" : "failed", error: message, runAt: retry ? new Date(now + backoff(job.attempts)) : job.runAt, updatedAt: new Date() }).where(eq(schedule.id, job.id));
+      if (!retry) await onFailed?.(job, message).catch(() => {}); // giving up is worth telling someone about
     }
   }
   return { ran, ok };

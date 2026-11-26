@@ -4,7 +4,7 @@ import type { BlockDef } from "../src/blocks";
 import type { TemplateDef } from "../src/templates";
 
 // `dirty` is set by whichever editor is open; the router asks before navigating away from unsaved work.
-export const store = $state<{ collections: Collection[]; blocks: BlockDef[]; templates: TemplateDef[]; loaded: boolean; error: string; dirty: boolean; zoom?: { src: string; alt: string }; me?: Me | null; signIn?: number; counts: Counts }>({ collections: [], blocks: [], templates: [], loaded: false, error: "", dirty: false, counts: {} });
+export const store = $state<{ collections: Collection[]; blocks: BlockDef[]; templates: TemplateDef[]; loaded: boolean; error: string; dirty: boolean; zoom?: { src: string; alt: string }; me?: Me | null; signIn?: number; unread?: number; counts: Counts }>({ collections: [], blocks: [], templates: [], loaded: false, error: "", dirty: false, counts: {} });
 hooks.unauthorized = () => { store.me = null; };
 
 export async function refreshCollections() {
@@ -15,3 +15,6 @@ export async function refreshCollections() {
 
 /** Sidebar badges: entries per collection that are drafts or have unpublished edits. */
 export const refreshCounts = () => api.counts().then((c) => (store.counts = c), () => {});
+
+/** The bell's count: notifications nobody has opened yet. */
+export const refreshUnread = () => api.notices().then((r) => (store.unread = r.unread), () => {});
