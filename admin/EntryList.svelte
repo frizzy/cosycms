@@ -31,6 +31,15 @@
   const filter = $derived(filters.some((f) => f.value === chosenFilter) ? chosenFilter : "");
   function setFilter(v: string) { chosenFilter = v; page = 0; try { v ? localStorage.setItem(FKEY, v) : localStorage.removeItem(FKEY); } catch {} }
 
+  // Owner-only, run by hand: entries that nothing points at (the scan reads every entry, so it is never automatic).
+  let unused = $state<Awaited<ReturnType<typeof api.unused>>>(), scanning = $state(false);
+  $effect(() => { collection; unused = undefined; });
+  async function scan() {
+    scanning = true; error = "";
+    try { unused = await api.unused(collection); } catch (e) { error = (e as Error).message; }
+    scanning = false;
+  }
+
   // The list is searched, sorted and paged on the server, so it stays quick however many entries there are.
   let q = $state(""), sort = $state("updated"), dir = $state<"asc" | "desc">("desc"), page = $state(0);
   let rows = $state<Entry[] | undefined>(), total = $state(0), error = $state(""), busy = $state(false);
@@ -77,9 +86,26 @@
   <select aria-label="Filter" value={filter} onchange={(e) => setFilter(e.currentTarget.value)}>{#each filters as f (f.value)}<option value={f.value}>{f.text}</option>{/each}</select>
   {#if col.thumbField}
     {#if grid}<select aria-label="Sort by" value={sort} onchange={(e) => { sort = e.currentTarget.value; dir = sort === "updated" ? "desc" : "asc"; page = 0; }}><option value="updated">Updated</option><option value={nameCol}>{titled ? "Title" : "Slug"}</option><option value="status">Status</option></select>{/if}
+    {#if store.me?.role === "owner"}<button type="button" class="ghost" onclick={scan} disabled={scanning} title="Find entries that nothing uses. Reads everything, so it runs only when you ask.">{scanning ? "Scanning…" : "Find unused"}</button>{/if}
     <div class="seg" role="group" aria-label="View"><button type="button" class="ghost" aria-pressed={!grid} aria-label="List view" title="List view" onclick={() => setView(false)}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button><button type="button" class="ghost" aria-pressed={grid} aria-label="Grid view" title="Grid view" onclick={() => setView(true)}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1" /><rect x="13.5" y="4" width="6.5" height="6.5" rx="1" /><rect x="4" y="13.5" width="6.5" height="6.5" rx="1" /><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1" /></svg></button></div>
   {/if}
 </div>
+
+{#if unused}
+  <section class="unused">
+    <p><strong>{unused.total ? `${unused.total} of ${unused.scanned} aren't used anywhere` : `Everything is used (${unused.scanned} checked)`}.</strong>
+      {#if unused.total > unused.items.length}<span class="muted">Showing the {unused.items.length} most recently updated.</span>{/if}
+      <button type="button" class="ghost" onclick={() => (unused = undefined)}>Close</button></p>
+    <div class="grid">
+      {#each unused.items as e (e.id)}
+        <a class="gtile" href="#/{collection}/{e.id}" title={label(e)}>
+          {#if e.thumb}<img src={blobUrl(e.thumb)} alt="" loading="lazy" />{:else}<span class="noimg"></span>{/if}
+          <span class="cap"><span class="ell">{label(e)}</span></span>
+        </a>
+      {/each}
+    </div>
+  </section>
+{/if}
 
 {#if error}<p class="error">{error}</p>
 {:else if !rows}

@@ -413,6 +413,21 @@ async function usedBy(c: { env: Env["Bindings"] }, e: { id: string; collection: 
   return [...new Map(out.map((u) => [u.id, u])).values()];
 }
 
+// A manual, owner-only scan: which entries of a collection nothing points at. It reads every entry once and collects each id that appears
+// anywhere (reference fields, images and links in text, blocks, templates, draft or published), so it is heavy and only runs when asked.
+// shortcut: returns the 200 most recently updated; a person clears those and scans again.
+app.post("/collections/:key/unused", ownerOnly, async (c) => {
+  const [col] = await db(c).select().from(collections).where(eq(collections.key, c.req.param("key")));
+  if (!col) return c.json({ error: "unknown collection" }, 404);
+  const seen = new Set<string>(), uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
+  const scan = (text: string | null) => { for (const m of text?.matchAll(uuid) ?? []) seen.add(m[0]); };
+  for (const r of await db(c).select({ d: sql<string>`${entries.data}`, l: sql<string>`${entries.live}` }).from(entries)) { scan(r.d); scan(r.l); }
+  for (const r of await db(c).select({ b: sql<string>`${templates.body}` }).from(templates)) scan(r.b);
+  const all = await db(c).select().from(entries).where(eq(entries.collection, col.key)).orderBy(desc(entries.updatedAt));
+  const unused = all.filter((e) => !seen.has(e.id));
+  return c.json({ items: await withThumbs(c, col, unused.slice(0, 200)), total: unused.length, scanned: all.length });
+});
+
 // For the editor's "Used in" list. shortcut: up to 50 per kind of use; a heavily used image shows the first ones.
 app.get("/entries/:id/usage", async (c) => {
   const [row] = await db(c).select().from(entries).where(eq(entries.id, c.req.param("id")));
