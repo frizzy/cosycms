@@ -383,19 +383,20 @@ app.post("/entries/:id/revert", async (c) => {
 });
 
 // Entries that still point at this one (checked through every reference field that targets its collection).
-async function usedBy(c: { env: Env["Bindings"] }, e: { id: string; collection: string }) {
-  const out: string[] = [];
+type Use = { id: string; collection: string; slug: string };
+async function usedBy(c: { env: Env["Bindings"] }, e: { id: string; collection: string }, limit = 5) {
+  const out: Use[] = [];
   // links in other entries' text point at this one by id, in the draft or the published version
   const needle = `cosy:entry/${e.id}`;
-  out.push(...(await db(c).select({ collection: entries.collection, slug: entries.slug }).from(entries)
-    .where(and(ne(entries.id, e.id), sql`(instr(${entries.data}, ${needle}) > 0 or instr(coalesce(${entries.live}, ''), ${needle}) > 0)`)).limit(5)).map((r) => `${r.collection}/${r.slug}`));
+  out.push(...await db(c).select({ id: entries.id, collection: entries.collection, slug: entries.slug }).from(entries)
+    .where(and(ne(entries.id, e.id), sql`(instr(${entries.data}, ${needle}) > 0 or instr(coalesce(${entries.live}, ''), ${needle}) > 0)`)).limit(limit));
   const defs = await db(c).select().from(blocks);
   for (const col of await db(c).select().from(collections)) for (const f of col.fields) {
     const libs = f.type === "richtext" ? [f.imageLibrary, ...blockLibraries(defs.filter((d) => f.blocks?.includes(d.key)))] : [];
     if (f.type === "richtext" && libs.includes(e.collection)) { // images placed in a body are stored as {"entry":"<id>"}
-      const rows = await db(c).select({ slug: entries.slug }).from(entries)
-        .where(and(eq(entries.collection, col.key), ne(entries.id, e.id), sql`(instr(${entries.data}, ${`"entry":"${e.id}"`}) > 0 or instr(coalesce(${entries.live}, ''), ${`"entry":"${e.id}"`}) > 0)`)).limit(5);
-      out.push(...rows.map((r) => `${col.key}/${r.slug}`));
+      const rows = await db(c).select({ id: entries.id, slug: entries.slug }).from(entries)
+        .where(and(eq(entries.collection, col.key), ne(entries.id, e.id), sql`(instr(${entries.data}, ${`"entry":"${e.id}"`}) > 0 or instr(coalesce(${entries.live}, ''), ${`"entry":"${e.id}"`}) > 0)`)).limit(limit);
+      out.push(...rows.map((r) => ({ ...r, collection: col.key })));
       continue;
     }
     if (f.type !== "reference" || f.collection !== e.collection) continue;
@@ -404,17 +405,23 @@ async function usedBy(c: { env: Env["Bindings"] }, e: { id: string; collection: 
       ? sql`exists (select 1 from json_each(json_extract(${col}, ${path})) where value = ${e.id})`
       : sql`json_extract(${col}, ${path}) = ${e.id}`;
     const hit = sql`(${one(entries.data, `$.${f.key}`)} or ${one(entries.live, `$.data.${f.key}`)})`; // field keys are validated as letters and digits only
-    const rows = await db(c).select({ slug: entries.slug }).from(entries).where(and(eq(entries.collection, col.key), ne(entries.id, e.id), hit)).limit(5);
-    out.push(...rows.map((r) => `${col.key}/${r.slug}`));
+    const rows = await db(c).select({ id: entries.id, slug: entries.slug }).from(entries).where(and(eq(entries.collection, col.key), ne(entries.id, e.id), hit)).limit(limit);
+    out.push(...rows.map((r) => ({ ...r, collection: col.key })));
   }
-  return out;
+  return [...new Map(out.map((u) => [u.id, u])).values()];
 }
+
+// For the editor's "Used in" list. shortcut: up to 50 per kind of use; a heavily used image shows the first ones.
+app.get("/entries/:id/usage", async (c) => {
+  const [row] = await db(c).select().from(entries).where(eq(entries.id, c.req.param("id")));
+  return row ? c.json({ items: await usedBy(c, row, 50) }) : c.json({ error: "not found" }, 404);
+});
 
 app.delete("/entries/:id", async (c) => {
   const [row] = await db(c).select().from(entries).where(eq(entries.id, c.req.param("id")));
   if (row?.live && c.get("user").app) return c.json({ error: "This entry is published. Only a person can take it off the site." }, 403);
   if (row) {
-    const users = [...new Set(await usedBy(c, row))];
+    const users = (await usedBy(c, row)).map((u) => `${u.collection}/${u.slug}`);
     if (users.length) return c.json({ error: `Still used by ${users.join(", ")}. Remove it there first.` }, 409);
     await db(c).delete(entries).where(eq(entries.id, row.id));
     await log(c, { action: "entry.delete", collection: row.collection, entryId: row.id, label: await labelOf(c, row), before: { slug: row.slug, data: row.data } });

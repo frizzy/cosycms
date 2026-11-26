@@ -83,6 +83,7 @@ export const api = {
   search: (collection: string, o: { q: string; sort: string; dir: "asc" | "desc"; limit: number; offset: number; filter?: string }) =>
     call<{ items: Entry[]; total: number }>(`/entries/search?${new URLSearchParams({ collection, q: o.q, sort: o.sort, dir: o.dir, limit: String(o.limit), offset: String(o.offset), filter: o.filter ?? "" })}`),
   list: (collection?: string) => call<Entry[]>("/entries" + (collection ? `?collection=${encodeURIComponent(collection)}` : "")),
+  usage: (id: string) => call<{ items: { id: string; collection: string; slug: string }[] }>(`/entries/${id}/usage`),
   get: (id: string) => call<Entry>(`/entries/${id}`),
   create: (e: EntryInput) => call<Entry>("/entries", { method: "POST", body: JSON.stringify(e) }),
   update: (id: string, e: EntryInput) => call<Entry>(`/entries/${id}`, { method: "PUT", body: JSON.stringify(e) }),

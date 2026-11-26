@@ -71,6 +71,11 @@
     api.get(id).then((e) => { savedSlug = e.slug; ({ slug, data, published, pending } = e); loading = false; }, (e) => { error = e.message; loading = false; });
   });
 
+  // Where this entry is used (an image in a post, a link from another entry): shown below the form when there is anything.
+  let usage = $state<{ id: string; collection: string; slug: string }[]>([]);
+  $effect(() => { if (id) api.usage(id).then((r) => (usage = r.items), () => {}); });
+  const collLabel = (key: string) => store.collections.find((x) => x.key === key)?.label ?? key;
+
   // Saving only ever changes the draft. Returns whether it saved.
   async function persist() {
     error = "";
@@ -150,4 +155,17 @@
       <span class="status">{#if error}<span class="error">{error}</span>{:else if dirty}<span class="dirty">Unsaved changes</span>{/if}</span>
     </div>
   </form>
+  {#if usage.length}
+    <section class="usage">
+      <h2>Used in {usage.length}{usage.length === 50 ? "+" : ""} {usage.length === 1 ? "place" : "places"}</h2>
+      <ul>{#each usage as u (u.id)}<li><a href="#/{u.collection}/{u.id}">{u.slug}</a> <span class="muted">{collLabel(u.collection)}</span></li>{/each}</ul>
+    </section>
+  {/if}
 {/if}
+
+<style>
+  .usage { margin-top: 2rem; }
+  .usage h2 { font-size: 1rem; margin: 0 0 .5rem; }
+  .usage ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; max-height: 14rem; overflow: auto; }
+  .usage li { overflow-wrap: anywhere; }
+</style>
