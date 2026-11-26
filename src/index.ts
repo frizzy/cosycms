@@ -248,14 +248,14 @@ async function attach<T extends { id: string }>(c: { env: Env["Bindings"] }, ite
   return items.map((e) => ({ ...e, schedule: by.get(e.id) }));
 }
 
-/** Keeps the entry's job in step with its schedule field: a future time schedules a publish, anything else removes it. */
-async function syncSchedule(c: { env: Env["Bindings"] }, e: { id: string; collection: string; data: Record<string, unknown> }, prev?: Record<string, unknown>) {
-  const [col] = await db(c).select({ f: collections.scheduleField }).from(collections).where(eq(collections.key, e.collection));
-  if (col?.f && prev && JSON.stringify(prev[col.f]) === JSON.stringify(e.data[col.f])) { // the time wasn't touched: leave the job alone (a publish by hand cancelled it), unless it failed and this save is the retry
-    const [job] = await db(c).select({ s: schedule.status }).from(schedule).where(and(eq(schedule.kind, "entry.publish"), eq(schedule.ref, e.id)));
-    if (job?.s !== "failed") return;
-  }
-  await setJob(c.env.DB, "entry.publish", e.id, col?.f ? futureTime(e.data[col.f]) : null);
+/** The collection's go-live field, if it has one. */
+const goLiveKey = async (c: { env: Env["Bindings"] }, collection: string) =>
+  (await db(c).select({ f: collections.scheduleField }).from(collections).where(eq(collections.key, collection)))[0]?.f ?? null;
+
+/** Keeps the entry's job in step with its go-live field: a draft with a future time is scheduled; a published entry or any other time is not. */
+async function syncSchedule(c: { env: Env["Bindings"] }, e: { id: string; collection: string; data: Record<string, unknown>; live: unknown }) {
+  const f = await goLiveKey(c, e.collection);
+  await setJob(c.env.DB, "entry.publish", e.id, f && !e.live ? futureTime(e.data[f]) : null);
 }
 
 // A list row's thumbnail: the storage key of its image, straight from an upload field, or looked up through a reference to an image library.
@@ -358,7 +358,7 @@ app.post("/entries", async (c) => {
   try { await db(c).insert(entries).values(row); }
   catch (e) { if (isConflict(e)) return c.json({ error: "slug already exists in this collection" }, 409); throw e; }
   await log(c, { action: "entry.create", collection: row.collection, entryId: row.id, label: await labelOf(c, row) });
-  await syncSchedule(c, row);
+  await syncSchedule(c, { ...row, live: null });
   return c.json((await attach(c, [shape({ ...row, status: "draft", live: null, pending: false })]))[0], 201);
 });
 
@@ -367,12 +367,14 @@ app.put("/entries/:id", async (c) => {
   if (!input.value) return c.json(input.error, 400);
   const [old] = await db(c).select().from(entries).where(eq(entries.id, c.req.param("id")));
   if (!old) return c.json({ error: "not found" }, 404);
+  const gl = await goLiveKey(c, old.collection);
+  if (gl && old.live && JSON.stringify(old.data[gl]) !== JSON.stringify(input.value.data[gl])) return c.json({ error: "The go-live time is locked while the entry is published. Unpublish it first to change it." }, 409);
   const row = { ...input.value, updatedAt: new Date(), pending: differs(old.live, input.value.slug, input.value.data) };
   try {
     const [res] = await db(c).update(entries).set(row).where(eq(entries.id, old.id)).returning();
     const changed = [...(old.slug !== res.slug ? ["slug"] : []), ...changedKeys(old.data, res.data)];
     if (changed.length) await log(c, { action: "entry.save", collection: res.collection, entryId: res.id, label: await labelOf(c, res), detail: changed.join(", "), before: { slug: old.slug, data: old.data } });
-    await syncSchedule(c, res, old.data);
+    await syncSchedule(c, res);
     return c.json((await attach(c, [shape(res)]))[0]);
   } catch (e) { if (isConflict(e)) return c.json({ error: "slug already exists in this collection" }, 409); throw e; }
 });
@@ -380,6 +382,8 @@ app.put("/entries/:id", async (c) => {
 // Publishing is a separate step from saving: it copies the working draft to `live`, which is what the site gets. Both re-check the draft
 // first (a file or an entry it points at may have gone since it was saved).
 async function publishRow(c: { env: Env["Bindings"] }, row: Row, who: { email: string; via?: string }, via = "") {
+  const f = await goLiveKey(c, row.collection), at = f ? futureTime(row.data[f]) : null;
+  if (f && at) return { error: { error: `This entry is set to go live ${at.toISOString().replace("T", " ").slice(0, 16)} UTC, so it can't be published yet. It publishes itself then; to publish now, set the go-live time to now or clear it.` } };
   const ok = await parseEntry(c, { collection: row.collection, slug: row.slug, data: row.data }, false);
   if (!ok.value) return { error: ok.error };
   const [res] = await db(c).update(entries).set({ live: { slug: row.slug, data: ok.value.data }, status: "published", pending: false }).where(eq(entries.id, row.id)).returning();
@@ -391,7 +395,6 @@ app.post("/entries/:id/publish", humanOnly, async (c) => {
   const [row] = await db(c).select().from(entries).where(eq(entries.id, c.req.param("id")));
   if (!row) return c.json({ error: "not found" }, 404);
   const r = await publishRow(c, row, { email: c.get("user").email, via: c.get("user").via });
-  if (r.res) await setJob(c.env.DB, "entry.publish", row.id, null); // publishing by hand replaces any scheduled publish
   return r.res ? c.json((await attach(c, [shape(r.res)]))[0]) : c.json(r.error, 400);
 });
 
@@ -400,7 +403,8 @@ app.post("/entries/:id/unpublish", humanOnly, async (c) => {
   const [res] = await db(c).update(entries).set({ live: null, status: "draft", pending: false }).where(eq(entries.id, c.req.param("id"))).returning();
   if (!res) return c.json({ error: "not found" }, 404);
   await log(c, { action: "entry.unpublish", collection: res.collection, entryId: res.id, label: await labelOf(c, res) });
-  return c.json(shape(res));
+  await syncSchedule(c, res); // a draft with a future go-live time is scheduled again
+  return c.json((await attach(c, [shape(res)]))[0]);
 });
 
 // Throws the draft away and goes back to the published version.
@@ -546,7 +550,7 @@ const handlers = (env: Env["Bindings"]) => ({
     // The entry or its schedule field changed since: the job no longer applies, so drop it.
     if (!row || !col?.f || futureTime(row.data[col.f], 0)?.getTime() !== job.runAt.getTime()) { await setJob(env.DB, job.kind, job.ref, null); return; }
     const r = await publishRow({ env }, row, SCHEDULER, " (scheduled)");
-    if (!r.res) { const e = r.error as { formErrors?: string[]; fieldErrors?: Record<string, string[]> }; throw new Error([...(e.formErrors ?? []), ...Object.values(e.fieldErrors ?? {}).flat()].join("; ") || "The entry no longer validates."); }
+    if (!r.res) { const e = r.error as { error?: string; formErrors?: string[]; fieldErrors?: Record<string, string[]> }; throw new Error([...(e.error ? [e.error] : []), ...(e.formErrors ?? []), ...Object.values(e.fieldErrors ?? {}).flat()].join("; ") || "The entry no longer validates."); }
     // Queue a deploy of just the entries published this way, so anything else you are holding back stays held back.
     const [d] = await db({ env }).select().from(schedule).where(and(eq(schedule.kind, "deploy.run"), eq(schedule.ref, "site")));
     await setJob(env.DB, "deploy.run", "site", new Date(), [...new Set([...(d && d.status !== "done" ? d.payload ?? [] : []), row.id])]);

@@ -17,7 +17,10 @@ async function prepare(d1: D1Database, targetName: string) {
     db.select().from(blocks),
   ]);
   // The site gets each entry's published version (`live`), never its working draft.
-  const rows = all.flatMap((e) => (e.live ? [{ ...e, slug: e.live.slug, data: e.live.data }] : []));
+  // Entries whose go-live time is still ahead stay off the site, even if published.
+  const goLive = new Map(cols.map((c) => [c.key, c.scheduleField])), now = Date.now();
+  const hidden = (e: (typeof all)[number]) => { const f = goLive.get(e.collection); return !!f && Date.parse(String(e.live?.data[f] ?? "")) > now; };
+  const rows = all.flatMap((e) => (e.live && !hidden(e) ? [{ ...e, slug: e.live.slug, data: e.live.data }] : []));
   const ctx: RenderCtx = { collections: new Map(cols.map((c) => [c.key, { fields: c.fields, format: c.format, bodyField: c.bodyField, folder: c.folder, urlTemplate: c.urlTemplate }])), entries: new Map(all.map((e) => [e.id, { collection: e.collection, slug: e.live?.slug ?? e.slug, data: e.live?.data ?? e.data }])), blocks: new Map(defs.map((d) => [d.key, d])) };
   const planned = await plan(rows, state, ctx);
   return { db, planned, warnings: draftWarnings(rows, new Map(all.map((e) => [e.id, e])), ctx) };

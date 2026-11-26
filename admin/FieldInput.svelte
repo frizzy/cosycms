@@ -8,7 +8,7 @@
   import { store } from "./store.svelte";
 
   // One input per field definition. Used by the entry editor and by the picker's quick-create form.
-  let { field: f, value = $bindable() }: { field: Field; value?: unknown } = $props();
+  let { field: f, value = $bindable(), locked = "" }: { field: Field; value?: unknown; locked?: string } = $props(); // locked: read-only, and why
   const name = $derived(f.label + (f.required && f.type !== "boolean" && f.type !== "richtext" ? " *" : ""));
   const uid = Math.random().toString(36).slice(2);
 
@@ -53,7 +53,8 @@
     {:else if f.type === "datetime" && f.autoSet === "save"}
       <input value={value ? new Date(String(value)).toLocaleString() : "Set when you save"} disabled />
     {:else if f.type === "datetime"}
-      <input type="datetime-local" value={toLocal(value)} oninput={(e) => (value = fromLocal(e.currentTarget.value))} required={f.required} />
+      <input type="datetime-local" value={toLocal(value)} oninput={(e) => (value = fromLocal(e.currentTarget.value))} required={f.required} disabled={!!locked} />
+      {#if locked}<small class="muted">{locked}</small>{/if}
       {#if f.autoSet === "create" && !value}<small class="muted">Filled in with the time you save, if left empty.</small>{/if}
     {:else if f.type === "boolean"}
       <input type="checkbox" bind:checked={value as boolean} />

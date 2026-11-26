@@ -56,8 +56,8 @@
   const fingerprint = () => JSON.stringify([slug, Object.entries(data).filter(([, v]) => present(v)).sort(([x], [y]) => (x < y ? -1 : 1))]);
   let baseline = $state<string>();
   const rebase = () => (baseline = fingerprint());
-  // A future go-live time means saving schedules the publish; the Publish button then goes live immediately instead, and cancels it.
-  const later = $derived(!!c.scheduleField && Date.parse(String(data[c.scheduleField] ?? "")) > Date.now());
+  // A draft with a future go-live time is scheduled when saved, and can't be published by hand until then.
+  const later = $derived(!published && !!c.scheduleField && Date.parse(String(data[c.scheduleField] ?? "")) > Date.now());
   const dirty = $derived(!loading && baseline !== undefined && fingerprint() !== baseline);
   $effect(() => { if (!loading) tick().then(rebase); }); // after bindings and the editor have settled
   $effect(() => {
@@ -99,17 +99,16 @@
     saving = false;
     return false;
   }
-  async function save(ev: SubmitEvent) { ev.preventDefault(); if (await persist()) toast("Draft saved"); }
+  async function save(ev: SubmitEvent) { ev.preventDefault(); if (await persist()) toast(sched ? `Scheduled to go live ${new Date(sched.at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}` : "Draft saved"); }
 
   // Publishing saves any open edits first, then makes the draft the live version.
   async function publish() {
-    if (later && !confirm("Publish now? This cancels the scheduled time.")) return;
     if (!id || (dirty && !(await persist()))) return;
     try { ({ published, pending, schedule: sched } = await api.publishEntry(id)); toast("Published. It goes to the site on the next Deploy."); refreshCounts(); } catch (e) { error = (e as Error).message; }
   }
   async function unpublish() {
     if (!id || !confirm("Take this off the site? The draft stays.")) return;
-    try { ({ published, pending } = await api.unpublishEntry(id)); toast("Unpublished"); refreshCounts(); } catch (e) { error = (e as Error).message; }
+    try { ({ published, pending, schedule: sched } = await api.unpublishEntry(id)); toast("Unpublished"); refreshCounts(); } catch (e) { error = (e as Error).message; }
   }
   async function revert() {
     if (!id || !confirm("Throw away the draft changes and go back to the published version?")) return;
@@ -132,7 +131,7 @@
 {#if sched}
   <p class="notice sched" class:failed={sched.failed}>
     {#if sched.failed}<strong>Scheduled publish failed.</strong> {sched.error} Fix it and save to try again.
-    {:else}<ClockIcon />Scheduled: publishes and deploys {new Date(sched.at).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" })}. Publishing by hand or clearing the go-live time cancels it.{/if}
+    {:else}<ClockIcon />Scheduled: publishes and deploys {new Date(sched.at).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" })}. Clear the go-live time to cancel it.{/if}
   </p>
 {/if}
 <header><h1>{id ? (c.titleField && String(data[c.titleField] ?? "").trim()) || slug || "Edit" : "New"}</h1></header>
@@ -155,10 +154,10 @@
         {:else if id && published && slug !== savedSlug}<span class="muted">The file moves when you publish this change.</span>{/if}
       </div>
     </div>
-    {#each c.fields as f (f.key)}<FieldInput field={f} bind:value={data[f.key]} />{/each}
+    {#each c.fields as f (f.key)}<FieldInput field={f} bind:value={data[f.key]} locked={published && f.key === c.scheduleField ? "Locked while published. Unpublish to change it." : ""} />{/each}
     <div class="actions">
       <button type="submit" class={id && !later && (!published || pending || dirty) ? "ghost" : ""} disabled={saving}>{later ? "Save and schedule" : "Save draft"}</button>
-      {#if id && (!published || pending || dirty)}<button type="button" class={later ? "ghost" : ""} onclick={publish} disabled={saving}>{later ? "Publish now" : published ? "Publish changes" : "Publish"}</button>{/if}
+      {#if id && !later && (!published || pending || dirty)}<button type="button" onclick={publish} disabled={saving}>{published ? "Publish changes" : "Publish"}</button>{/if}
       {#if id && published && pending && !dirty}<button type="button" class="ghost" onclick={revert}>Discard draft changes</button>{/if}
       {#if id && published}<button type="button" class="ghost" onclick={unpublish}>Unpublish</button>{/if}
       {#if id}<button type="button" class="danger" onclick={remove}>Delete</button>{/if}
