@@ -5,6 +5,7 @@
   import TagsInput from "./TagsInput.svelte";
   import FileInput from "./FileInput.svelte";
   import ReferenceInput from "./ReferenceInput.svelte";
+  import DateTimeInput from "./DateTimeInput.svelte";
   import { store } from "./store.svelte";
 
   // One input per field definition. Used by the entry editor and by the picker's quick-create form.
@@ -12,10 +13,6 @@
   const name = $derived(f.label + (f.required && f.type !== "boolean" && f.type !== "richtext" ? " *" : ""));
   const uid = Math.random().toString(36).slice(2);
 
-  // Stored as UTC ISO; the picker works in local time.
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const toLocal = (iso: unknown) => { if (!iso) return ""; const d = new Date(String(iso)); return isNaN(+d) ? "" : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
-  const fromLocal = (s: string) => (s ? new Date(s).toISOString() : undefined);
 
   function toggle(option: string) {
     const cur = (value as string[] | undefined) ?? [];
@@ -53,7 +50,7 @@
     {:else if f.type === "datetime" && f.autoSet === "save"}
       <input value={value ? new Date(String(value)).toLocaleString() : "Set when you save"} disabled />
     {:else if f.type === "datetime"}
-      <input type="datetime-local" value={toLocal(value)} oninput={(e) => (value = fromLocal(e.currentTarget.value))} required={f.required} disabled={!!locked} />
+      <DateTimeInput bind:value={value as string | undefined} disabled={!!locked} />
       {#if locked}<small class="muted">{locked}</small>{/if}
       {#if f.autoSet === "create" && !value}<small class="muted">Filled in with the time you save, if left empty.</small>{/if}
     {:else if f.type === "boolean"}
