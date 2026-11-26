@@ -5,7 +5,7 @@ export type GithubOpts = { token: string; repo: string; branch?: string; dir?: s
 
 function client(o: GithubOpts, fetchFn: typeof fetch) {
   return async function gh<T>(path: string, method = "GET", body?: unknown): Promise<T> {
-    const res = await fetchFn(`https://api.github.com/repos/${o.repo}/${path}`, {
+    const res = await fetchFn(`https://api.github.com/repos/${o.repo}${path && "/" + path}`, {
       method,
       headers: {
         authorization: `Bearer ${o.token}`,
@@ -32,6 +32,27 @@ export async function githubRuns(o: GithubOpts, sha: string, fetchFn: typeof fet
   }));
   const state = !runs.length ? "none" : runs.some((r) => r.state === "failed") ? "failed" : runs.some((r) => r.state === "running") ? "running" : "success";
   return { state, runs };
+}
+
+export type AccessCheck = { name: string; ok: boolean; detail: string; optional?: boolean };
+
+/** Tries what a deploy needs, one thing at a time, and says which permission is missing. The write test creates an unreferenced blob: nothing visible changes. */
+export async function githubCheck(o: GithubOpts, fetchFn: typeof fetch = fetch): Promise<AccessCheck[]> {
+  const gh = client(o, fetchFn), branch = o.branch || "main";
+  const step = async (name: string, denied: string, run: () => Promise<unknown>, optional = false): Promise<AccessCheck> => {
+    try { await run(); return { name, ok: true, detail: "OK", optional }; }
+    catch (e) {
+      const s = (e as { status?: number }).status;
+      return { name, ok: false, optional, detail: s === 401 ? "GitHub doesn't accept this token (wrong, expired or revoked)." : s === 403 || s === 404 ? denied : (e as Error).message };
+    }
+  };
+  const repo = await step("Repository", `Can't see ${o.repo}. Check the name, and that the token is granted this repository.`, () => gh(""));
+  if (!repo.ok) return [repo];
+  return [repo,
+    await step("Branch", `Branch "${branch}" wasn't found. It has to exist before a deploy (create it first).`, () => gh(`git/ref/heads/${branch}`)),
+    await step("Write access", "The token can't write. Give it Contents: read & write.", () => gh("git/blobs", "POST", { content: "cosycms access check", encoding: "utf-8" })),
+    await step("Site build status", "Needs Actions: read. Only used to show the site build after a deploy.", () => gh("actions/runs?per_page=1"), true),
+  ];
 }
 
 // Commits all changes in one commit via the Git Data API (no git binary needed, so it runs on Workers).

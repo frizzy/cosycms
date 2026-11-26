@@ -1,6 +1,7 @@
 import type { Collection, Field } from "../src/fields";
 import type { FileValue } from "../src/images";
 import type { BlockDef } from "../src/blocks";
+import type { AccessCheck } from "../src/github";
 import type { TemplateDef } from "../src/templates";
 
 export type Entry = {
@@ -88,6 +89,7 @@ export const api = {
   slugAvailable: (collection: string, slug: string, except?: string) =>
     call<{ available: boolean; suggestion?: string }>(`/slug-available?${new URLSearchParams({ collection, slug, ...(except ? { except } : {}) })}`),
   build: () => call<{ pages: number; images: number; removed: number; paths: { type: "page" | "image" | "delete"; path: string }[]; more: number; warnings: string[]; conflicts: string[]; error?: string }>("/build", { method: "POST" }),
+  checkAccess: (s: { repo?: string; branch?: string; token?: string }) => call<{ checks: AccessCheck[] }>("/settings/check", { method: "POST", body: JSON.stringify(s) }),
   ci: (sha: string) => call<{ state: "none" | "running" | "success" | "failed"; runs: { name: string; state: "running" | "success" | "failed"; url: string }[] }>(`/ci?sha=${sha}`),
   publish: () => call<{ changed: number; ref?: string; warnings?: string[]; remaining?: number }>("/publish", { method: "POST" }),
   counts: () => call<Counts>("/entries/counts"),

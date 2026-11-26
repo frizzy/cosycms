@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { draftWarnings, entryFiles, filePath, plan, relative, render, type PublishedEntry, type RenderCtx } from "./plan.ts";
-import { githubRuns, githubTarget } from "./github.ts";
+import { githubCheck, githubRuns, githubTarget } from "./github.ts";
 import { frontmatter } from "./frontmatter.ts";
 import { IMAGE_DEFAULTS, KEY_RE, blobKey, fitWithin, imageOptions, isAnimated, outputType, sniffImage } from "./images.ts";
 import { CollectionCreate, CollectionDef, dataSchema, entryLabel, folderError, nextFreeSlug, shapeChanges, slugify, type Field } from "./fields.ts";
@@ -527,4 +527,23 @@ test("githubRuns: looks up runs by commit and reduces them to one state", async 
   assert.equal((await ask([run("completed", "cancelled")])).state, "failed");
   const denied: typeof fetch = async () => new Response("nope", { status: 403 });
   await assert.rejects(() => githubRuns({ token: "t", repo: "o/r" }, "abc", denied), (e: any) => e.status === 403);
+});
+
+test("githubCheck: names the missing permission, and stops when the repo itself can't be seen", async () => {
+  const make = (deny: Record<string, number>): typeof fetch => async (u, init) => {
+    const path = String(u).replace("https://api.github.com/repos/o/r", "").replace(/^\//, "") || "";
+    const key = Object.keys(deny).find((k) => path.startsWith(k) || (k === "repo" && path === ""));
+    return key ? new Response("{}", { status: deny[key] }) : new Response(JSON.stringify({ ok: init?.method ?? "GET" }));
+  };
+  const run = (deny: Record<string, number>) => githubCheck({ token: "t", repo: "o/r", branch: "cms" }, make(deny));
+  const all = await run({});
+  assert.deepEqual(all.map((c) => [c.name, c.ok]), [["Repository", true], ["Branch", true], ["Write access", true], ["Site build status", true]]);
+  const noWrite = await run({ "git/blobs": 403, actions: 403 });
+  assert.match(noWrite.find((c) => c.name === "Write access")!.detail, /Contents: read & write/);
+  assert.equal(noWrite.find((c) => c.name === "Site build status")!.optional, true);
+  assert.match((await run({ "git/ref": 404 })).find((c) => c.name === "Branch")!.detail, /"cms" wasn't found/);
+  const none = await run({ repo: 404 });
+  assert.equal(none.length, 1);
+  assert.match(none[0].detail, /Can't see o\/r/);
+  assert.match((await run({ repo: 401 }))[0].detail, /doesn't accept this token/);
 });

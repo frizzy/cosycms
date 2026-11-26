@@ -9,7 +9,7 @@ import { changedKeys, logActivity, type Event } from "./activity";
 import { BlockDef, blockLibraries } from "./blocks";
 import { CollectionCreate, CollectionDef, dataSchema, entryLabel, fileFieldOf, nextFreeSlug, shapeChanges, slugBase, type Field } from "./fields";
 import { bodyLimit } from "hono/body-limit";
-import { githubRuns, githubTarget } from "./github";
+import { githubCheck, githubRuns, githubTarget } from "./github";
 import { r2Store } from "./blobs";
 import { KEY_RE, MAX_IMAGE_BYTES, blobKey, blobUrl, sniffImage } from "./images";
 import { docBlockNames, docImageIds, docLinkIds, fillPictures } from "./markdown";
@@ -429,6 +429,17 @@ const Settings = z.object({
 app.get("/settings", async (c) => {
   const { token, tokenError, ...rest } = await loadGithub(c.env.DB, c.env);
   return c.json({ ...rest, hasToken: !!token || !!tokenError, tokenError });
+});
+
+// Tries the saved token and repo, or whatever is typed in the form but not saved yet.
+app.post("/settings/check", ownerOnly, async (c) => {
+  const body = Settings.safeParse(await c.req.json().catch(() => ({})));
+  if (!body.success) return c.json(body.error.flatten(), 400);
+  const saved = await loadGithub(c.env.DB, c.env);
+  if (saved.tokenError && !body.data.token) return c.json({ error: saved.tokenError }, 400);
+  const token = body.data.token || saved.token, repo = body.data.repo || saved.repo;
+  if (!token || !repo) return c.json({ error: "Add a repository and a token first." }, 400);
+  return c.json({ checks: await githubCheck({ token, repo, branch: body.data.branch || saved.branch }) });
 });
 
 app.put("/settings", ownerOnly, async (c) => {

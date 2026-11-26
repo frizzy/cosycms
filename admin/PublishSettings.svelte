@@ -4,12 +4,20 @@
   import { saveShortcut } from "./keys";
   let repo = $state(""), branch = $state(""), dir = $state(""), token = $state("");
   let hasToken = $state(false), tokenError = $state(""), loading = $state(true), error = $state("");
+  let checks = $state<Awaited<ReturnType<typeof api.checkAccess>>["checks"]>(), checking = $state(false);
 
   const load = () => api.settings().then((s) => {
     ({ repo = "", branch = "", dir = "", hasToken, tokenError = "" } = s); token = ""; loading = false;
   }, (e) => { error = e.message; loading = false; });
   $effect(() => { load(); });
 
+  // Tests what is in the form, saved or not (a blank token means the saved one).
+  async function check() {
+    checking = true; error = ""; checks = undefined;
+    try { checks = (await api.checkAccess({ repo, branch, token: token || undefined })).checks; }
+    catch (e) { error = (e as Error).message; }
+    checking = false;
+  }
   async function save(ev: SubmitEvent) {
     ev.preventDefault(); error = "";
     try { await api.saveSettings({ repo, branch, dir, token: token || undefined }); toast("Saved"); await load(); }
@@ -32,7 +40,19 @@
     </label>
     <div class="actions">
       <button type="submit">Save</button>
+      <button type="button" class="ghost" onclick={check} disabled={checking}>{checking ? "Checking…" : "Check access"}</button>
       <span class="status">{#if error}<span class="error">{error}</span>{/if}</span>
     </div>
+    {#if checks}
+      <ul class="checks" aria-live="polite">
+        {#each checks as c}
+          <li><span class={c.ok ? "ok" : c.optional ? "muted" : "error"} aria-hidden="true">{c.ok ? "✓" : c.optional ? "!" : "✗"}</span> <strong>{c.name}</strong>{#if !c.ok} <span class="muted">{c.detail}</span>{/if}</li>
+        {/each}
+      </ul>
+    {/if}
   </form>
 {/if}
+
+<style>
+  .checks { list-style:none; margin:1rem 0 0; padding:0; display:grid; gap:.4rem; }
+</style>
