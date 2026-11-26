@@ -27,7 +27,7 @@
     ...(owner ? [
       { id: "blocks", label: "Blocks", hint: "Page", go: to("#/blocks") }, { id: "tpl", label: "Templates", hint: "Page", go: to("#/templates") },
       { id: "newc", label: "New collection", hint: "Create", go: to("#/collections/new") },
-      ...[["publishing", "Deploy settings"], ["signin", "Sign-in settings"], ["people", "People"], ["notifications", "Notification settings"], ["search", "Search index"]].map(([k, l]) => ({ id: `s-${k}`, label: l, hint: "Settings", go: to(`#/settings/${k}`) })),
+      ...[["publishing", "Deploy settings"], ["signin", "Sign-in settings"], ["people", "People"], ["notifications", "Notification settings"], ["search", "Search index"], ["backups", "Backups"]].map(([k, l]) => ({ id: `s-${k}`, label: l, hint: "Settings", go: to(`#/settings/${k}`) })),
     ] : []),
     { id: "apps", label: "Connected apps", hint: "Settings", go: to("#/settings/apps") },
   ]);

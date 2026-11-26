@@ -346,6 +346,10 @@ app.get("/search/status", ownerOnly, async (c) => {
   const n = (t: string) => c.env.DB.prepare(`select count(*) n from ${t}`).first<{ n: number }>().then((r) => r?.n ?? 0);
   return c.json({ entries: await n("entries"), indexed: await n("search_doc"), links: await n("refs") });
 });
+app.get("/backup/status", ownerOnly, async (c) => {
+  const [r] = await db(c).select().from(settings).where(eq(settings.key, "backup.last"));
+  return c.json({ last: r ? (JSON.parse(r.value) as { at: string; detail: string }) : null });
+});
 app.post("/search/rebuild", ownerOnly, async (c) => { await rebuildIndex(c); return c.body(null, 204); });
 
 // Sidebar badges: what still needs a person's attention in each collection (never published, or edited since).
@@ -619,6 +623,13 @@ const handlers = (env: Env["Bindings"]) => ({
     await logActivity(env.DB, SCHEDULER, { action: "deploy", detail: r.changed ? `${r.changed} file${r.changed === 1 ? "" : "s"} (scheduled)` : "nothing new" });
     if (r.ref) await watchBuild(env.DB, r.ref);
   },
+  // Reports come from the server's cron job; if none arrives for a day and a half, that is worth knowing. Runs every few hours once a report has been seen.
+  "backup.check": async (job: Job) => {
+    const [r] = await db({ env }).select().from(settings).where(eq(settings.key, "backup.last"));
+    const last = r ? Date.parse(JSON.parse(r.value).at) : 0, hours = (Date.now() - last) / 3600_000;
+    if (!last || hours > 36) await notify(env.DB, { kind: "backup", ref: "stale", level: "error", title: "No recent backup", body: last ? `The last good backup was ${Math.round(hours)} hours ago. Check the server's cron job (scripts/backup.sh).` : "No successful backup has been reported yet. Check the server's cron job (scripts/backup.sh).", link: "#/settings/backups" });
+    await setJob(env.DB, job.kind, job.ref, new Date(Date.now() + 6 * 3600_000));
+  },
   // Follows the site's build for one deploy until it finishes, then records the result. Polls about once a minute (a tick is a minute apart).
   "ci.check": async (job: Job) => {
     const { token, repo, branch, dir } = await loadGithub(env.DB, env);
@@ -672,12 +683,27 @@ app.get("/schedule", ownerOnly, async (c) => {
 // Sign-in and OAuth routes come first (reachable signed out); everything else under /api needs a session or an access token.
 const root = new Hono<Env>();
 root.route("/", authRoutes);
-// The scheduler's trigger on a server without cron triggers (Docker): something calls this every minute with the TICK_TOKEN.
-root.post("/api/tick", async (c) => {
+// Scripts on the server (not signed-in people) call these with the TICK_TOKEN: the scheduler's tick every minute, and the backup script's report.
+const automationDenied = (c: { env: Env["Bindings"]; req: { header(n: string): string | undefined }; json(b: unknown, s: 404 | 401): Response }) => {
   const want = c.env.TICK_TOKEN, got = c.req.header("authorization")?.replace(/^Bearer /, "") ?? "";
   if (!want) return c.json({ error: "not found" }, 404);
   if (got.length !== want.length || [...want].reduce((d, ch, i) => d | (ch.charCodeAt(0) ^ got.charCodeAt(i)), 0)) return c.json({ error: "unauthorized" }, 401);
-  return c.json(await tick(c.env));
+  return null;
+};
+root.post("/api/tick", async (c) => automationDenied(c) ?? c.json(await tick(c.env)));
+root.post("/api/backup/report", async (c) => {
+  const denied = automationDenied(c);
+  if (denied) return denied;
+  const b = z.object({ ok: z.boolean(), detail: z.string().max(300).optional() }).safeParse(await c.req.json().catch(() => null));
+  if (!b.success) return c.json({ error: "expected { ok, detail? }" }, 400);
+  const d = db({ env: c.env });
+  if (b.data.ok) {
+    const v = JSON.stringify({ at: new Date().toISOString(), detail: b.data.detail ?? "" });
+    await d.insert(settings).values({ key: "backup.last", value: v }).onConflictDoUpdate({ target: settings.key, set: { value: v } });
+    await d.update(notifications).set({ readAt: new Date() }).where(and(eq(notifications.kind, "backup"), isNull(notifications.readAt))); // a good backup clears a failure or a "no backup" notice
+  } else await notify(c.env.DB, { kind: "backup", ref: "failed", level: "error", title: "Backup failed", body: b.data.detail ?? "The backup script reported a failure.", link: "#/settings/backups" });
+  await setJob(c.env.DB, "backup.check", "daily", new Date(Date.now() + 6 * 3600_000)); // from the first report on, notice if they stop coming
+  return c.body(null, 204);
 });
 root.use("/api/*", requireAuth);
 root.route("/", accountRoutes);

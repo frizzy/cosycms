@@ -106,6 +106,7 @@ export const api = {
   values: (collection: string, field: string) => call<string[]>(`/collections/${collection}/values/${field}`),
   find: (q: string, limit = 20) => call<{ total: number; items: Hit[] }>(`/search?q=${encodeURIComponent(q)}&limit=${limit}`),
   recent: (limit = 10) => call<{ items: Entry[] }>(`/entries/recent?limit=${limit}`),
+  backupStatus: () => call<{ last: { at: string; detail: string } | null }>("/backup/status"),
   searchStatus: () => call<{ entries: number; indexed: number; links: number }>("/search/status"),
   rebuildSearch: () => call<void>("/search/rebuild", { method: "POST" }),
   notices: () => call<{ items: Notice[]; unread: number }>("/notifications"),

@@ -4,3 +4,8 @@ admin/dist
 .dev.vars
 data
 certs
+
+# off-box backup settings and password (scripts/offsite-setup.sh)
+.backup.env
+.backup.password
+.restore.*
