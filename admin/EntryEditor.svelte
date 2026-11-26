@@ -129,7 +129,7 @@
 {#if sched}
   <p class="notice sched" class:failed={sched.failed}>
     {#if sched.failed}<strong>Scheduled publish failed.</strong> {sched.error} Fix it and save to try again.
-    {:else}<ClockIcon />Scheduled: publishes and deploys {new Date(sched.at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}. Clear the go-live time to cancel.{/if}
+    {:else}<ClockIcon />Scheduled: publishes and deploys {new Date(sched.at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", timeZoneName: "short" })}. Publishing by hand or clearing the go-live time cancels it.{/if}
   </p>
 {/if}
 <header><h1>{id ? (c.titleField && String(data[c.titleField] ?? "").trim()) || slug || "Edit" : "New"}</h1></header>

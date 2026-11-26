@@ -19,11 +19,11 @@ export function futureTime(value: unknown, now = Date.now()): Date | null {
 export const backoff = (attempts: number) => attempts * 5 * 60_000;
 
 /** Creates the job, or moves an existing one to the new time and starts it afresh. A null time removes it. */
-export async function setJob(d1: D1Database, kind: string, ref: string, runAt: Date | null) {
+export async function setJob(d1: D1Database, kind: string, ref: string, runAt: Date | null, payload: string[] | null = null) {
   const d = drizzle(d1), now = new Date();
   if (!runAt) { await d.delete(schedule).where(and(eq(schedule.kind, kind), eq(schedule.ref, ref))); return; }
-  await d.insert(schedule).values({ id: crypto.randomUUID(), kind, ref, runAt, updatedAt: now })
-    .onConflictDoUpdate({ target: [schedule.kind, schedule.ref], set: { runAt, status: "pending", attempts: 0, error: null, updatedAt: now } });
+  await d.insert(schedule).values({ id: crypto.randomUUID(), kind, ref, runAt, payload, updatedAt: now })
+    .onConflictDoUpdate({ target: [schedule.kind, schedule.ref], set: { runAt, payload, status: "pending", attempts: 0, error: null, updatedAt: now } });
 }
 
 /** Runs every job that is due. Returns how many ran and how many of those succeeded. */

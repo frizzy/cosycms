@@ -116,5 +116,6 @@ export const schedule = sqliteTable("schedule", {
   status: text({ enum: ["pending", "running", "done", "failed"] }).notNull().default("pending"),
   attempts: integer().notNull().default(0),
   error: text(),
+  payload: text({ mode: "json" }).$type<string[]>(), // deploy.run: the entries it may send (the ones the scheduler published)
   updatedAt: integer({ mode: "timestamp_ms" }).notNull(),
 }, (t) => [uniqueIndex("schedule_job").on(t.kind, t.ref), index("schedule_due").on(t.status, t.runAt)]);

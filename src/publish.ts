@@ -37,8 +37,11 @@ export async function build(d1: D1Database, targetName: string) {
   };
 }
 
-export async function publish(d1: D1Database, target: Target) {
-  const { db, planned, warnings } = await prepare(d1, target.name);
+/** Sends what is published. With `only`, just those entries (and their files): everything else, held back or not, stays as the site has it. */
+export async function publish(d1: D1Database, target: Target, only?: string[]) {
+  const { db, planned: all, warnings } = await prepare(d1, target.name);
+  const mine = (id: string) => !only || only.includes(id.split("#")[0]); // a file's id is "<entry id>#<field>"
+  const planned = { ...all, changes: all.changes.filter((c) => mine(c.id)), upserts: all.upserts.filter((u) => mine(u.entryId)), removed: all.removed.filter(mine) };
   if (planned.conflicts.length) throw new Error(conflictError(planned.conflicts));
   if (!planned.changes.length) return { changed: 0, warnings };
 

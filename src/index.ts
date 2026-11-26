@@ -249,8 +249,12 @@ async function attach<T extends { id: string }>(c: { env: Env["Bindings"] }, ite
 }
 
 /** Keeps the entry's job in step with its schedule field: a future time schedules a publish, anything else removes it. */
-async function syncSchedule(c: { env: Env["Bindings"] }, e: { id: string; collection: string; data: Record<string, unknown> }) {
+async function syncSchedule(c: { env: Env["Bindings"] }, e: { id: string; collection: string; data: Record<string, unknown> }, prev?: Record<string, unknown>) {
   const [col] = await db(c).select({ f: collections.scheduleField }).from(collections).where(eq(collections.key, e.collection));
+  if (col?.f && prev && JSON.stringify(prev[col.f]) === JSON.stringify(e.data[col.f])) { // the time wasn't touched: leave the job alone (a publish by hand cancelled it), unless it failed and this save is the retry
+    const [job] = await db(c).select({ s: schedule.status }).from(schedule).where(and(eq(schedule.kind, "entry.publish"), eq(schedule.ref, e.id)));
+    if (job?.s !== "failed") return;
+  }
   await setJob(c.env.DB, "entry.publish", e.id, col?.f ? futureTime(e.data[col.f]) : null);
 }
 
@@ -368,7 +372,7 @@ app.put("/entries/:id", async (c) => {
     const [res] = await db(c).update(entries).set(row).where(eq(entries.id, old.id)).returning();
     const changed = [...(old.slug !== res.slug ? ["slug"] : []), ...changedKeys(old.data, res.data)];
     if (changed.length) await log(c, { action: "entry.save", collection: res.collection, entryId: res.id, label: await labelOf(c, res), detail: changed.join(", "), before: { slug: old.slug, data: old.data } });
-    await syncSchedule(c, res);
+    await syncSchedule(c, res, old.data);
     return c.json((await attach(c, [shape(res)]))[0]);
   } catch (e) { if (isConflict(e)) return c.json({ error: "slug already exists in this collection" }, 409); throw e; }
 });
@@ -387,6 +391,7 @@ app.post("/entries/:id/publish", humanOnly, async (c) => {
   const [row] = await db(c).select().from(entries).where(eq(entries.id, c.req.param("id")));
   if (!row) return c.json({ error: "not found" }, 404);
   const r = await publishRow(c, row, { email: c.get("user").email, via: c.get("user").via });
+  if (r.res) await setJob(c.env.DB, "entry.publish", row.id, null); // publishing by hand replaces any scheduled publish
   return r.res ? c.json((await attach(c, [shape(r.res)]))[0]) : c.json(r.error, 400);
 });
 
@@ -542,12 +547,14 @@ const handlers = (env: Env["Bindings"]) => ({
     if (!row || !col?.f || futureTime(row.data[col.f], 0)?.getTime() !== job.runAt.getTime()) { await setJob(env.DB, job.kind, job.ref, null); return; }
     const r = await publishRow({ env }, row, SCHEDULER, " (scheduled)");
     if (!r.res) { const e = r.error as { formErrors?: string[]; fieldErrors?: Record<string, string[]> }; throw new Error([...(e.formErrors ?? []), ...Object.values(e.fieldErrors ?? {}).flat()].join("; ") || "The entry no longer validates."); }
-    await setJob(env.DB, "deploy.run", "site", new Date());
+    // Queue a deploy of just the entries published this way, so anything else you are holding back stays held back.
+    const [d] = await db({ env }).select().from(schedule).where(and(eq(schedule.kind, "deploy.run"), eq(schedule.ref, "site")));
+    await setJob(env.DB, "deploy.run", "site", new Date(), [...new Set([...(d && d.status !== "done" ? d.payload ?? [] : []), row.id])]);
   },
-  "deploy.run": async () => {
+  "deploy.run": async (job: Job) => {
     const { token, tokenError, repo, branch, dir } = await loadGithub(env.DB, env);
     if (tokenError || !token || !repo) throw new Error(tokenError ?? "GitHub target not configured");
-    const r = await publish(env.DB, githubTarget({ token, repo, branch, dir }, fetch, r2Store(env.BLOBS)));
+    const r = await publish(env.DB, githubTarget({ token, repo, branch, dir }, fetch, r2Store(env.BLOBS)), job.payload ?? []);
     await logActivity(env.DB, SCHEDULER, { action: "deploy", detail: r.changed ? `${r.changed} file${r.changed === 1 ? "" : "s"} (scheduled)` : "nothing new" });
   },
 });
