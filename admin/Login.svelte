@@ -45,7 +45,7 @@
   <p class="login muted" aria-busy="true">Loading…</p>
 {:else}
   <form class="login" onsubmit={submit}>
-    <h1><Logo size={34} /></h1>
+    <h1><Logo size={32} /></h1>
     {#if secret}
       <p>{invitee ? `Choose a password for ${invitee}.` : "Checking your invite…"}</p>
     {:else if info.needsSetup}

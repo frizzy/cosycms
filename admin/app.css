@@ -301,7 +301,7 @@ button.zoom { all:unset; display:block; line-height:0; cursor:zoom-in; border-ra
 .tile button.zoom { width:100%; } .tile button.zoom img { display:block; }
 dialog.lightbox { width:auto; max-width:94vw; padding:.75rem; background:transparent; border:0; text-align:center; cursor:zoom-out; }
 dialog.lightbox img { max-width:92vw; max-height:82vh; object-fit:contain; border-radius:8px; background:var(--surface); } dialog.lightbox p { margin:.6rem 0 0; color:#fff; font-size:.9rem; }
-.logo { display:inline-flex; align-items:center; gap:.45rem; } .logo svg { flex:none; }
+.logo { display:inline-flex; align-items:center; gap:.5rem; font-family:"IBM Plex Mono", ui-monospace, monospace; } .logo svg { flex:none; }
 .listbar > button[aria-pressed=true] { background:var(--accent-soft); color:var(--accent-text); font-weight:600; }
 .sched { display:inline-flex; align-items:center; gap:.3rem; margin-left:.6rem; color:var(--accent-text); font-size:.85em; } .sched.failed { color:var(--danger); }
 p.notice.sched { display:flex; align-items:center; gap:.5rem; } p.notice.sched.failed { background:var(--danger-soft); color:var(--danger); }
