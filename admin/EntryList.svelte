@@ -19,17 +19,29 @@
   const SIZE = $derived(grid ? 24 : 25);
   function setView(g: boolean) { chosen = g; page = 0; try { localStorage.setItem(KEY, g ? "grid" : "list"); } catch {} }
 
+  // Filters, remembered per collection: status ones everywhere, plus "no <field>" for optional fields that can be left empty.
+  const FKEY = $derived(`cosy.filter.${collection}`);
+  const filters = $derived([
+    { value: "", text: "All" }, { value: "attention", text: "Needs publishing" }, { value: "draft", text: "Drafts" }, { value: "edited", text: "Edited" },
+    ...col.fields.filter((f) => !f.required && ["text", "textarea", "url", "reference", "file"].includes(f.type)).map((f) => ({ value: `empty:${f.key}`, text: `No ${f.label.toLowerCase()}` })),
+  ]);
+  const storedFilter = () => { try { return localStorage.getItem(FKEY) ?? ""; } catch { return ""; } };
+  let chosenFilter = $state(storedFilter());
+  $effect(() => { chosenFilter = storedFilter(); });
+  const filter = $derived(filters.some((f) => f.value === chosenFilter) ? chosenFilter : "");
+  function setFilter(v: string) { chosenFilter = v; page = 0; try { v ? localStorage.setItem(FKEY, v) : localStorage.removeItem(FKEY); } catch {} }
+
   // The list is searched, sorted and paged on the server, so it stays quick however many entries there are.
   let q = $state(""), sort = $state("updated"), dir = $state<"asc" | "desc">("desc"), page = $state(0);
   let rows = $state<Entry[] | undefined>(), total = $state(0), error = $state(""), busy = $state(false);
 
   let first = true; // the first load is immediate; typing is debounced
   $effect(() => {
-    const query = q.trim(), s = sort, d = dir, p = page;
+    const query = q.trim(), s = sort, d = dir, p = page, f = filter;
     let stale = false;
     const t = setTimeout(() => {
       busy = true;
-      api.search(collection, { q: query, sort: s, dir: d, limit: SIZE, offset: p * SIZE }).then((r) => {
+      api.search(collection, { q: query, sort: s, dir: d, limit: SIZE, offset: p * SIZE, filter: f }).then((r) => {
         if (stale) return;
         // A deletion elsewhere can leave this page past the end: go back to the last real page.
         if (!r.items.length && p > 0) { page = Math.max(0, Math.ceil(r.total / SIZE) - 1); return; }
@@ -60,6 +72,7 @@
 
 <div class="listbar">
   <input type="search" class="search" placeholder="Search {col.label.toLowerCase()}" aria-label="Search entries" bind:value={q} oninput={() => (page = 0)} />
+  <select aria-label="Filter" value={filter} onchange={(e) => setFilter(e.currentTarget.value)}>{#each filters as f (f.value)}<option value={f.value}>{f.text}</option>{/each}</select>
   {#if col.thumbField}
     {#if grid}<select aria-label="Sort by" value={sort} onchange={(e) => { sort = e.currentTarget.value; dir = sort === "updated" ? "desc" : "asc"; page = 0; }}><option value="updated">Updated</option><option value={nameCol}>{titled ? "Title" : "Slug"}</option><option value="status">Status</option></select>{/if}
     <div class="seg" role="group" aria-label="View"><button type="button" class="ghost" aria-pressed={!grid} aria-label="List view" title="List view" onclick={() => setView(false)}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button><button type="button" class="ghost" aria-pressed={grid} aria-label="Grid view" title="Grid view" onclick={() => setView(true)}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1" /><rect x="13.5" y="4" width="6.5" height="6.5" rx="1" /><rect x="4" y="13.5" width="6.5" height="6.5" rx="1" /><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1" /></svg></button></div>
@@ -78,7 +91,7 @@
           <span class="cap"><span class="ell">{label(e)}</span>{#if e.published}<span class:edited={e.pending} title={e.pending ? "Published, with draft changes" : "Published"}><LiveIcon /></span>{/if}</span>
         </a>
       {:else}
-        <p class="empty">{#if q.trim()}No entries match “{q.trim()}”.{:else}Nothing here yet. <a href="#/{collection}/new">Create the first entry.</a>{/if}</p>
+        <p class="empty">{#if q.trim() || filter}No entries match{q.trim() ? ` “${q.trim()}”` : ""}{filter ? " this filter" : ""}.{:else}Nothing here yet. <a href="#/{collection}/new">Create the first entry.</a>{/if}</p>
       {/each}
     </div>
   {:else}
@@ -102,7 +115,7 @@
         </tr>
       {:else}
         <tr><td colspan="3" class="empty">
-          {#if q.trim()}No entries match “{q.trim()}”.{:else}Nothing here yet. <a href="#/{collection}/new">Create the first entry.</a>{/if}
+          {#if q.trim() || filter}No entries match{q.trim() ? ` “${q.trim()}”` : ""}{filter ? " this filter" : ""}.{:else}Nothing here yet. <a href="#/{collection}/new">Create the first entry.</a>{/if}
         </td></tr>
       {/each}
     </tbody>

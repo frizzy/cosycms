@@ -80,8 +80,8 @@ export const api = {
   deleteCollection: (key: string) => call<void>(`/collections/${key}`, { method: "DELETE" }),
   settings: () => call<Settings>("/settings"),
   saveSettings: (s: SettingsInput) => call<void>("/settings", { method: "PUT", body: JSON.stringify(s) }),
-  search: (collection: string, o: { q: string; sort: string; dir: "asc" | "desc"; limit: number; offset: number }) =>
-    call<{ items: Entry[]; total: number }>(`/entries/search?${new URLSearchParams({ collection, q: o.q, sort: o.sort, dir: o.dir, limit: String(o.limit), offset: String(o.offset) })}`),
+  search: (collection: string, o: { q: string; sort: string; dir: "asc" | "desc"; limit: number; offset: number; filter?: string }) =>
+    call<{ items: Entry[]; total: number }>(`/entries/search?${new URLSearchParams({ collection, q: o.q, sort: o.sort, dir: o.dir, limit: String(o.limit), offset: String(o.offset), filter: o.filter ?? "" })}`),
   list: (collection?: string) => call<Entry[]>("/entries" + (collection ? `?collection=${encodeURIComponent(collection)}` : "")),
   get: (id: string) => call<Entry>(`/entries/${id}`),
   create: (e: EntryInput) => call<Entry>("/entries", { method: "POST", body: JSON.stringify(e) }),

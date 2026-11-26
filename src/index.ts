@@ -258,14 +258,18 @@ async function withThumbs(c: { env: Env["Bindings"] }, col: { fields: Field[]; t
 // The admin's list: search, sort and one page at a time, so a collection can grow without the list slowing down.
 // Search looks in the slug and every text field; sorting by title uses the collection's title field (falling back to the slug).
 app.get("/entries/search", async (c) => {
-  const { collection = "", q = "", sort = "updated", dir = "desc" } = c.req.query();
+  const { collection = "", q = "", sort = "updated", dir = "desc", filter = "" } = c.req.query();
   const limit = Math.min(Math.max(parseInt(c.req.query("limit") ?? "") || 25, 1), 100), offset = Math.max(parseInt(c.req.query("offset") ?? "") || 0, 0);
   const [col] = await db(c).select().from(collections).where(eq(collections.key, collection));
   if (!col) return c.json({ error: "unknown collection" }, 400);
   const path = (k: string) => sql`json_extract(${entries.data}, ${`$.${k}`})`; // field keys are validated as letters and digits only
   const term = `%${q.trim().replace(/[\\%_]/g, "\\$&")}%`;
+  // filter: draft (never published) | edited (draft differs from published) | attention (either) | empty:<field> (nothing filled in)
+  const emptyKey = filter.startsWith("empty:") ? filter.slice(6) : "";
+  const filtered = filter === "draft" ? eq(entries.status, "draft") : filter === "edited" ? eq(entries.pending, true) : filter === "attention" ? or(eq(entries.status, "draft"), eq(entries.pending, true))
+    : emptyKey && col.fields.some((f) => f.key === emptyKey) ? sql`coalesce(trim(cast(${path(emptyKey)} as text)), '') in ('', '[]')` : undefined;
   const match = (e: ReturnType<typeof sql>) => sql`${e} like ${term} escape '\\'`;
-  const where = and(eq(entries.collection, collection), q.trim()
+  const where = and(eq(entries.collection, collection), filtered, q.trim()
     ? or(match(sql`${entries.slug}`), ...col.fields.filter((f) => f.type === "text" || f.type === "textarea").map((f) => match(path(f.key))))
     : undefined);
   const key = sort === "slug" ? sql`${entries.slug}` : sort === "status" ? sql`${entries.status}`
