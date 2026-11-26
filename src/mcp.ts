@@ -18,9 +18,17 @@ const TOOLS: Tool[] = [
   { name: "list_entries", hint: "read", description: "List the entries of one collection, newest change first, a page at a time. Returns id, slug, title and state for each (use get_entry for the content). state is draft, published, or edited (published, with draft changes not yet live).",
     properties: { collection: { type: "string", description: "Collection key" }, limit: { type: "number", description: "Page size, up to 100 (default 25)" }, offset: { type: "number" } }, required: ["collection"],
     run: (a, call) => search(call, a) },
-  { name: "search_entries", hint: "read", description: "Find entries in one collection by words in the slug or any text field. Same result as list_entries: id, slug, title and state. Then get_entry by id, or by collection and slug.",
-    properties: { collection: { type: "string", description: "Collection key" }, query: { type: "string" }, sort: { type: "string", enum: ["updated", "title", "slug", "status"] }, limit: { type: "number" }, offset: { type: "number" } }, required: ["collection", "query"],
+  { name: "search_entries", hint: "read", description: "Find entries in one collection by words in the slug, tags, any text field or the body. Whole words and the beginnings of words match ('cla' finds 'clay'), not the middle of a word. Best match first unless you sort. Same result as list_entries: id, slug, title and state. Then get_entry by id, or by collection and slug.",
+    properties: { collection: { type: "string", description: "Collection key" }, query: { type: "string" }, sort: { type: "string", enum: ["relevance", "updated", "title", "slug", "status"] }, limit: { type: "number" }, offset: { type: "number" } }, required: ["collection", "query"],
     run: (a, call) => search(call, a) },
+  { name: "search_content", hint: "read", description: "Search every collection at once, bodies included, best matches first. Use it to find where something is written about. Returns collection, id, slug, title, state and a short excerpt with the matched words in **bold**; then get_entry. Whole words and the beginnings of words match, not the middle of a word. Image-library captions come after the other content.",
+    properties: { query: { type: "string" }, limit: { type: "number", description: "Up to 25 (default 10)" } }, required: ["query"],
+    async run(a, call) {
+      const r = await call("GET", `/api/search?q=${encodeURIComponent(a.query ?? "")}&limit=${Math.min(Math.max(a.limit ?? 10, 1), 25)}`);
+      if (!r.ok) return r;
+      const plain = (s: string) => s.replace(/[\u0001\u0002]/g, ""), bold = (s: string) => s.replace(/[\u0001\u0002]/g, "**");
+      return { ok: true, body: { total: r.body.total, items: r.body.items.map((e: any) => ({ collection: e.collection, id: e.id, slug: e.slug, title: plain(e.match.title), state: !e.published ? "draft" : e.pending ? "edited" : "published", excerpt: e.match.snippet ? bold(e.match.snippet) : undefined })) } };
+    } },
   { name: "get_entry", hint: "read", description: "Get one entry. Give its id, or its collection and slug (easier than copying an id; ids are long and must be exact).",
     properties: { id: { type: "string" }, collection: { type: "string" }, slug: { type: "string" } },
     async run(a, call) {
@@ -75,7 +83,7 @@ const TOOLS: Tool[] = [
 
 /** One page of an entry list without the bodies: an id, slug, title and state per entry. */
 async function search(call: Call, a: { collection: string; query?: string; sort?: string; limit?: number; offset?: number }) {
-  const [cols, r] = await Promise.all([call("GET", "/api/collections"), call("GET", `/api/entries/search?collection=${encodeURIComponent(a.collection)}&q=${encodeURIComponent(a.query ?? "")}&sort=${a.sort ?? "updated"}&limit=${Math.min(Math.max(a.limit ?? 25, 1), 100)}&offset=${Math.max(a.offset ?? 0, 0)}`)]);
+  const [cols, r] = await Promise.all([call("GET", "/api/collections"), call("GET", `/api/entries/search?collection=${encodeURIComponent(a.collection)}&q=${encodeURIComponent(a.query ?? "")}&sort=${a.sort ?? (a.query?.trim() ? "relevance" : "updated")}&limit=${Math.min(Math.max(a.limit ?? 25, 1), 100)}&offset=${Math.max(a.offset ?? 0, 0)}`)]);
   if (!r.ok) return r;
   const col = cols.body?.find?.((c: any) => c.key === a.collection);
   return { ok: true, body: { total: r.body.total, items: r.body.items.map((e: any) => ({ id: e.id, slug: e.slug, title: col ? entryLabel(col.fields, e.data, e.slug, col.titleField) : e.slug,

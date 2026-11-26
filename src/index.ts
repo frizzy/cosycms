@@ -5,7 +5,7 @@ import { and, count, desc, eq, inArray, isNull, like, ne, or, sql } from "drizzl
 import { z } from "zod";
 import { activity, blocks, collections, entries, notifications, schedule, settings, templates } from "./schema";
 import { notify, successWanted } from "./notifications";
-import { INDEX_VERSION, type Indexable, rebuild as rebuildAll, reindex, reindexTemplate, searchIndex, unindex, unindexTemplate } from "./search";
+import { INDEX_VERSION, type Indexable, ftsQuery, rebuild as rebuildAll, reindex, reindexTemplate, searchIndex, unindex, unindexTemplate } from "./search";
 import { futureTime, runDue, setJob, type Job } from "./schedule";
 import { TemplateDef } from "./templates";
 import { changedKeys, logActivity, type Event } from "./activity";
@@ -290,28 +290,29 @@ async function thumbsOf(c: { env: Env["Bindings"] }, col: { fields: Field[]; thu
 }
 
 // The admin's list: search, sort and one page at a time, so a collection can grow without the list slowing down.
-// Search looks in the slug and every text field; sorting by title uses the collection's title field (falling back to the slug).
+// Search uses the full-text index (slug, tags, text fields and bodies; whole words and word beginnings); sorting by title uses the collection's title field (falling back to the slug), and `relevance` ranks the matches.
 app.get("/entries/search", async (c) => {
   const { collection = "", q = "", sort = "updated", dir = "desc", filter = "" } = c.req.query();
   const limit = Math.min(Math.max(parseInt(c.req.query("limit") ?? "") || 25, 1), 100), offset = Math.max(parseInt(c.req.query("offset") ?? "") || 0, 0);
   const [col] = await db(c).select().from(collections).where(eq(collections.key, collection));
   if (!col) return c.json({ error: "unknown collection" }, 400);
   const path = (k: string) => sql`json_extract(${entries.data}, ${`$.${k}`})`; // field keys are validated as letters and digits only
-  const term = `%${q.trim().replace(/[\\%_]/g, "\\$&")}%`;
+  const fts = ftsQuery(q);
+  if (q.trim()) await ensureIndex(c);
   // filter: draft (never published) | edited (draft differs from published) | attention (either) | empty:<field> (nothing filled in)
   const emptyKey = filter.startsWith("empty:") ? filter.slice(6) : "";
   const filtered = filter === "draft" ? eq(entries.status, "draft") : filter === "edited" ? eq(entries.pending, true) : filter === "attention" ? or(eq(entries.status, "draft"), eq(entries.pending, true))
     : filter === "scheduled" ? sql`${entries.id} in (select ref from schedule where kind = 'entry.publish' and status != 'done')`
     : emptyKey && col.fields.some((f) => f.key === emptyKey) ? sql`coalesce(trim(cast(${path(emptyKey)} as text)), '') in ('', '[]')` : undefined;
-  const match = (e: ReturnType<typeof sql>) => sql`${e} like ${term} escape '\\'`;
   const where = and(eq(entries.collection, collection), filtered, q.trim()
-    ? or(match(sql`${entries.slug}`), ...col.fields.filter((f) => f.type === "text" || f.type === "textarea").map((f) => match(path(f.key))))
+    ? (fts ? sql`${entries.id} in (select d.entry from search join search_doc d on d.id = search.rowid where search match ${fts} and d.collection = ${collection})` : sql`0`) // only punctuation: nothing to match
     : undefined);
-  const key = sort === "slug" ? sql`${entries.slug}` : sort === "status" ? sql`${entries.status}`
+  const rank = fts ? sql`(select bm25(search, 10.0, 6.0, 1.0, 3.0) from search join search_doc d on d.id = search.rowid where search match ${fts} and d.entry = ${entries.id})` : sql`${entries.updatedAt}`;
+  const key = sort === "relevance" ? rank : sort === "slug" ? sql`${entries.slug}` : sort === "status" ? sql`${entries.status}`
     : sort === "title" ? (col.titleField ? sql`lower(coalesce(nullif(trim(${path(col.titleField)}), ''), ${entries.slug}))` : sql`${entries.slug}`)
     : sql`${entries.updatedAt}`;
   const [{ total }] = await db(c).select({ total: count() }).from(entries).where(where);
-  const items = await db(c).select().from(entries).where(where).orderBy(dir === "asc" ? sql`${key} asc` : sql`${key} desc`, entries.id).limit(limit).offset(offset);
+  const items = await db(c).select().from(entries).where(where).orderBy(sort === "relevance" ? sql`${key} asc` : dir === "asc" ? sql`${key} asc` : sql`${key} desc`, entries.id).limit(limit).offset(offset); // bm25 is lower for better matches
   return c.json({ items: await withThumbs(c, col, items), total });
 });
 
