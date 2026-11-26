@@ -5,6 +5,7 @@ import { and, count, desc, eq, inArray, isNull, like, ne, or, sql } from "drizzl
 import { z } from "zod";
 import { activity, blocks, collections, entries, notifications, schedule, settings, templates } from "./schema";
 import { notify, successWanted } from "./notifications";
+import { INDEX_VERSION, type Indexable, rebuild as rebuildAll, reindex, reindexTemplate, searchIndex, unindex, unindexTemplate } from "./search";
 import { futureTime, runDue, setJob, type Job } from "./schedule";
 import { TemplateDef } from "./templates";
 import { changedKeys, logActivity, type Event } from "./activity";
@@ -188,6 +189,7 @@ app.put("/templates/:key", ownerOnly, async (c) => {
   const [old] = await db(c).select().from(templates).where(eq(templates.key, key));
   const row = { ...input.data, updatedAt: new Date() };
   await db(c).insert(templates).values(row).onConflictDoUpdate({ target: templates.key, set: { label: row.label, body: row.body, prompt: row.prompt, updatedAt: row.updatedAt } });
+  await reindexTemplate(c.env.DB, key, row.body);
   await log(c, { action: "template.save", label: row.label, detail: old ? "changed" : "created" });
   return c.json(row, old ? 200 : 201);
 });
@@ -196,7 +198,7 @@ app.delete("/templates/:key", ownerOnly, async (c) => {
   const used = await usersOfTemplate(c, c.req.param("key"));
   if (used.length) return c.json({ error: `This template is used by a field of: ${used.join(", ")}. Remove it there first.` }, 409);
   const [gone] = await db(c).delete(templates).where(eq(templates.key, c.req.param("key"))).returning();
-  if (gone) await log(c, { action: "template.delete", label: gone.label });
+  if (gone) { await unindexTemplate(c.env.DB, gone.key); await log(c, { action: "template.delete", label: gone.label }); }
   return c.body(null, 204);
 });
 
@@ -250,6 +252,21 @@ async function attach<T extends { id: string }>(c: { env: Env["Bindings"] }, ite
   return items.map((e) => ({ ...e, schedule: by.get(e.id) }));
 }
 
+// Search and "where used" indexes (see search.ts): updated after every write, built on first use.
+async function indexEntry(c: { env: Env["Bindings"] }, e: Indexable) {
+  const [col] = await db(c).select().from(collections).where(eq(collections.key, e.collection));
+  await reindex(c.env.DB, col, e);
+}
+async function rebuildIndex(c: { env: Env["Bindings"] }) {
+  const cols = await db(c).select().from(collections);
+  await rebuildAll(c.env.DB, new Map(cols.map((k) => [k.key, k])), await db(c).select().from(entries), await db(c).select().from(templates));
+  await db(c).insert(settings).values({ key: "index.ready", value: INDEX_VERSION }).onConflictDoUpdate({ target: settings.key, set: { value: INDEX_VERSION } });
+}
+async function ensureIndex(c: { env: Env["Bindings"] }) {
+  const [r] = await db(c).select().from(settings).where(eq(settings.key, "index.ready"));
+  if (r?.value !== INDEX_VERSION) await rebuildIndex(c);
+}
+
 /** Keeps the entry's job in step with its go-live time: a draft with a future time is scheduled; a published entry or any other time is not. */
 const syncSchedule = (c: { env: Env["Bindings"] }, e: { id: string; publishAt: Date | null; live: unknown }) =>
   setJob(c.env.DB, "entry.publish", e.id, e.live ? null : futureTime(e.publishAt));
@@ -298,6 +315,38 @@ app.get("/entries/search", async (c) => {
   return c.json({ items: await withThumbs(c, col, items), total });
 });
 
+// Rows from any collections, shaped like the list's (thumbnail, schedule), in the order given.
+async function shapeMixed(c: { env: Env["Bindings"] }, rows: Row[]) {
+  const cols = await db(c).select().from(collections), by = new Map<string, Row[]>();
+  for (const r of rows) by.set(r.collection, [...(by.get(r.collection) ?? []), r]);
+  const shaped = new Map((await Promise.all([...by].map(([k, rs]) => withThumbs(c, cols.find((x) => x.key === k) ?? { fields: [] }, rs)))).flat().map((e) => [e.id, e]));
+  return rows.flatMap((r) => (shaped.has(r.id) ? [shaped.get(r.id)!] : []));
+}
+
+// The latest changes across every collection (the Overview page).
+app.get("/entries/recent", async (c) => {
+  const limit = Math.min(Math.max(parseInt(c.req.query("limit") ?? "") || 10, 1), 50);
+  return c.json({ items: await shapeMixed(c, await db(c).select().from(entries).orderBy(desc(entries.updatedAt)).limit(limit)) });
+});
+
+// Full-text search over every entry's draft, bodies included, best matches first. `match` carries the matched words marked with \u0001 \u0002.
+app.get("/search", async (c) => {
+  await ensureIndex(c);
+  const limit = Math.min(Math.max(parseInt(c.req.query("limit") ?? "") || 20, 1), 50);
+  const libraries = (await db(c).select().from(collections)).filter((k) => fileFieldOf(k)).map((k) => k.key);
+  const r = await searchIndex(c.env.DB, c.req.query("q") ?? "", limit, libraries);
+  const rows = r.hits.length ? await db(c).select().from(entries).where(inArray(entries.id, r.hits.map((h) => h.entry))) : [];
+  const order = new Map(r.hits.map((h, i) => [h.entry, i]));
+  const items = await shapeMixed(c, rows.sort((a, b) => order.get(a.id)! - order.get(b.id)!));
+  return c.json({ total: r.total, items: items.map((e) => ({ ...e, match: { title: r.hits[order.get(e.id)!].title, snippet: r.hits[order.get(e.id)!].snip } })) });
+});
+app.get("/search/status", ownerOnly, async (c) => {
+  await ensureIndex(c);
+  const n = (t: string) => c.env.DB.prepare(`select count(*) n from ${t}`).first<{ n: number }>().then((r) => r?.n ?? 0);
+  return c.json({ entries: await n("entries"), indexed: await n("search_doc"), links: await n("refs") });
+});
+app.post("/search/rebuild", ownerOnly, async (c) => { await rebuildIndex(c); return c.body(null, 204); });
+
 // Sidebar badges: what still needs a person's attention in each collection (never published, or edited since).
 app.get("/entries/counts", async (c) => {
   const rows = await db(c).select({ collection: entries.collection, drafts: sql<number>`sum(${entries.status} = 'draft')`, edited: sql<number>`sum(${entries.pending})` }).from(entries).groupBy(entries.collection);
@@ -324,6 +373,7 @@ app.post("/activity/:id/undo", async (c) => {
     const [res] = cur
       ? await db(c).update(entries).set({ slug: ok.value.slug, data: ok.value.data, pending: differs(cur.live, ok.value.slug, ok.value.data), updatedAt: new Date() }).where(eq(entries.id, cur.id)).returning()
       : await db(c).insert(entries).values({ id: a.entryId, collection: a.collection, slug: ok.value.slug, data: ok.value.data, updatedAt: new Date() }).returning();
+    await indexEntry(c, res);
     await log(c, { action: "entry.restore", collection: res.collection, entryId: res.id, label: await labelOf(c, res), detail: cur ? "undid a change" : "brought it back", before: cur && { slug: cur.slug, data: cur.data } });
     return c.json(shape(res));
   } catch (e) { if (isConflict(e)) return c.json({ error: "That slug is now used by another entry." }, 409); throw e; }
@@ -356,6 +406,7 @@ app.post("/entries", async (c) => {
   catch (e) { if (isConflict(e)) return c.json({ error: "slug already exists in this collection" }, 409); throw e; }
   await log(c, { action: "entry.create", collection: row.collection, entryId: row.id, label: await labelOf(c, row) });
   await syncSchedule(c, { ...row, live: null });
+  await indexEntry(c, { ...row, live: null });
   return c.json((await attach(c, [shape({ ...row, status: "draft", live: null, pending: false, publishedAt: null, revisedAt: null })]))[0], 201);
 });
 
@@ -373,6 +424,7 @@ app.put("/entries/:id", async (c) => {
     const changed = [...(old.slug !== res.slug ? ["slug"] : []), ...changedKeys(old.data, res.data)];
     if (changed.length) await log(c, { action: "entry.save", collection: res.collection, entryId: res.id, label: await labelOf(c, res), detail: changed.join(", "), before: { slug: old.slug, data: old.data } });
     await syncSchedule(c, res);
+    await indexEntry(c, res);
     return c.json((await attach(c, [shape(res)]))[0]);
   } catch (e) { if (isConflict(e)) return c.json({ error: "slug already exists in this collection" }, 409); throw e; }
 });
@@ -385,6 +437,7 @@ async function publishRow(c: { env: Env["Bindings"] }, row: Row, who: { email: s
   const ok = await parseEntry(c, { collection: row.collection, slug: row.slug, data: row.data }, false);
   if (!ok.value) return { error: ok.error };
   const [res] = await db(c).update(entries).set({ live: { slug: row.slug, data: ok.value.data }, status: "published", pending: false, publishedAt: row.publishedAt ?? row.publishAt ?? now, revisedAt: now }).where(eq(entries.id, row.id)).returning();
+  await indexEntry(c, res); // the published version counts as a use of what it points at
   await logActivity(c.env.DB, who, { action: "entry.publish", collection: res.collection, entryId: res.id, label: await labelOf(c, res), detail: (row.live ? "changes" : "first time") + via });
   return { res };
 }
@@ -402,6 +455,7 @@ app.post("/entries/:id/unpublish", humanOnly, async (c) => {
   if (!res) return c.json({ error: "not found" }, 404);
   await log(c, { action: "entry.unpublish", collection: res.collection, entryId: res.id, label: await labelOf(c, res) });
   await syncSchedule(c, res); // a draft with a future go-live time is scheduled again
+  await indexEntry(c, res);
   return c.json((await attach(c, [shape(res)]))[0]);
 });
 
@@ -411,6 +465,7 @@ app.post("/entries/:id/revert", async (c) => {
   if (!row?.live) return c.json({ error: row ? "There is no published version to go back to." : "not found" }, row ? 400 : 404);
   try {
     const [res] = await db(c).update(entries).set({ slug: row.live.slug, data: row.live.data, pending: false, updatedAt: new Date() }).where(eq(entries.id, row.id)).returning();
+    await indexEntry(c, res);
     await log(c, { action: "entry.revert", collection: res.collection, entryId: res.id, label: await labelOf(c, res), detail: changedKeys(row.data, row.live.data).join(", "), before: { slug: row.slug, data: row.data } });
     return c.json(shape(res));
   } catch (e) { if (isConflict(e)) return c.json({ error: "The published slug is now used by another entry." }, 409); throw e; }
@@ -427,31 +482,10 @@ app.get("/collections/:key/values/:field", async (c) => {
 
 // Entries that still point at this one (checked through every reference field that targets its collection).
 type Use = { id: string; collection: string; slug: string };
-async function usedBy(c: { env: Env["Bindings"] }, e: { id: string; collection: string }, limit = 5) {
-  const out: Use[] = [];
-  // links in other entries' text point at this one by id, in the draft or the published version
-  const needle = `cosy:entry/${e.id}`;
-  out.push(...await db(c).select({ id: entries.id, collection: entries.collection, slug: entries.slug }).from(entries)
-    .where(and(ne(entries.id, e.id), sql`(instr(${entries.data}, ${needle}) > 0 or instr(coalesce(${entries.live}, ''), ${needle}) > 0)`)).limit(limit));
-  const defs = await db(c).select().from(blocks);
-  for (const col of await db(c).select().from(collections)) for (const f of col.fields) {
-    const libs = f.type === "richtext" ? [f.imageLibrary, ...blockLibraries(defs.filter((d) => f.blocks?.includes(d.key)))] : [];
-    if (f.type === "richtext" && libs.includes(e.collection)) { // images placed in a body are stored as {"entry":"<id>"}
-      const rows = await db(c).select({ id: entries.id, slug: entries.slug }).from(entries)
-        .where(and(eq(entries.collection, col.key), ne(entries.id, e.id), sql`(instr(${entries.data}, ${`"entry":"${e.id}"`}) > 0 or instr(coalesce(${entries.live}, ''), ${`"entry":"${e.id}"`}) > 0)`)).limit(limit);
-      out.push(...rows.map((r) => ({ ...r, collection: col.key })));
-      continue;
-    }
-    if (f.type !== "reference" || f.collection !== e.collection) continue;
-    // the draft and the published version both count: removing this would break whichever still points at it
-    const one = (col: typeof entries.data | typeof entries.live, path: string) => f.multiple
-      ? sql`exists (select 1 from json_each(json_extract(${col}, ${path})) where value = ${e.id})`
-      : sql`json_extract(${col}, ${path}) = ${e.id}`;
-    const hit = sql`(${one(entries.data, `$.${f.key}`)} or ${one(entries.live, `$.data.${f.key}`)})`; // field keys are validated as letters and digits only
-    const rows = await db(c).select({ id: entries.id, slug: entries.slug }).from(entries).where(and(eq(entries.collection, col.key), ne(entries.id, e.id), hit)).limit(limit);
-    out.push(...rows.map((r) => ({ ...r, collection: col.key })));
-  }
-  return [...new Map(out.map((u) => [u.id, u])).values()];
+async function usedBy(c: { env: Env["Bindings"] }, e: { id: string }, limit = 5): Promise<Use[]> {
+  await ensureIndex(c);
+  const { results } = await c.env.DB.prepare("select e.id, e.collection, e.slug from refs r join entries e on e.id = r.src where r.dst = ? order by e.updatedAt desc limit ?").bind(e.id, limit).all<Use>();
+  return results;
 }
 
 // A manual, owner-only scan: which entries of a collection nothing points at. It reads every entry once and collects each id that appears
@@ -460,12 +494,10 @@ async function usedBy(c: { env: Env["Bindings"] }, e: { id: string; collection: 
 app.post("/collections/:key/unused", ownerOnly, async (c) => {
   const [col] = await db(c).select().from(collections).where(eq(collections.key, c.req.param("key")));
   if (!col) return c.json({ error: "unknown collection" }, 404);
-  const seen = new Set<string>(), uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
-  const scan = (text: string | null) => { for (const m of text?.matchAll(uuid) ?? []) seen.add(m[0]); };
-  for (const r of await db(c).select({ d: sql<string>`${entries.data}`, l: sql<string>`${entries.live}` }).from(entries)) { scan(r.d); scan(r.l); }
-  for (const r of await db(c).select({ b: sql<string>`${templates.body}` }).from(templates)) scan(r.b);
+  await ensureIndex(c);
   const all = await db(c).select().from(entries).where(eq(entries.collection, col.key)).orderBy(desc(entries.updatedAt));
-  const unused = all.filter((e) => !seen.has(e.id));
+  const used = new Set((await c.env.DB.prepare("select distinct dst from refs").all<{ dst: string }>()).results.map((r) => r.dst));
+  const unused = all.filter((e) => !used.has(e.id));
   return c.json({ items: await withThumbs(c, col, unused.slice(0, 200)), total: unused.length, scanned: all.length });
 });
 
@@ -483,6 +515,7 @@ app.delete("/entries/:id", async (c) => {
     if (users.length) return c.json({ error: `Still used by ${users.join(", ")}. Remove it there first.` }, 409);
     await db(c).delete(entries).where(eq(entries.id, row.id));
     await db(c).delete(schedule).where(eq(schedule.ref, row.id));
+    await unindex(c.env.DB, row.id);
     await log(c, { action: "entry.delete", collection: row.collection, entryId: row.id, label: await labelOf(c, row), before: { slug: row.slug, data: row.data } });
   }
   return c.body(null, 204);
