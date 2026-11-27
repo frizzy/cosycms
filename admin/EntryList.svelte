@@ -130,7 +130,7 @@
 
   // The scroll bar: the whole list as a track, what is loaded shaded, and the part on screen as the handle. Drag or click to jump.
   let listEl = $state<HTMLElement>(), track = $state<HTMLElement>(), navH = $state(0), headH = $state(0), headEl = $state<HTMLElement>();
-  let sbw = $state(0), vis = $state({ top: 0, size: 1 }), bubble = $state<{ y: number; text: string } | null>(null), dragging = $state(false), dwell: ReturnType<typeof setTimeout>;
+  let vis = $state({ top: 0, size: 1 }), bubble = $state<{ y: number; text: string } | null>(null), dragging = $state(false), dwell: ReturnType<typeof setTimeout>;
   const stick = $derived(navH + headH);
   $effect(() => {
     const nav = document.querySelector("nav"), mq = matchMedia("(max-width:760px)");
@@ -141,16 +141,21 @@
     if (headEl) ro.observe(headEl);
     return () => ro.disconnect();
   });
+  // The bar spans only the part of the list that is on screen: below the pinned bars and column heads, ending where the list ends, and just beside the list.
+  let pos = $state({ top: 0, height: 0, left: 0 });
   function measure() {
-    sbw = innerWidth - document.documentElement.clientWidth; // a classic scroll bar takes room; the overlay kind (0) floats over the edge
+    const sbw = innerWidth - document.documentElement.clientWidth; // a classic scroll bar takes room; the overlay kind (0) floats over the edge
     if (!listEl || !rows?.length || !total) return;
-    const r = listEl.getBoundingClientRect(), frac = rows.length / total;
-    const a = Math.min(1, Math.max(0, (stick - r.top) / r.height)), b = Math.min(1, Math.max(a, (innerHeight - r.top) / r.height));
+    const r = listEl.getBoundingClientRect(), head = listEl.querySelector("thead")?.getBoundingClientRect().height ?? 0;
+    const body = r.height - head, bodyTop = r.top + head, shownTop = Math.max(stick + head, bodyTop), shownBottom = Math.min(innerHeight, r.bottom), frac = rows.length / total;
+    const a = Math.min(1, Math.max(0, (shownTop - bodyTop) / body)), b = Math.min(1, Math.max(a, (shownBottom - bodyTop) / body));
     vis = { top: a * frac, size: Math.max(0.02, (b - a) * frac) };
+    const top = shownTop + 6, bottom = Math.min(innerHeight - 12, r.bottom);
+    pos = { top, height: Math.max(0, bottom - top), left: Math.min(r.right + 10, innerWidth - sbw - 22) };
   }
   $effect(() => { rows?.length; total; stick; listEl; tick().then(measure); });
-  const showTrack = $derived(!unused && total > BATCH);
-  $effect(() => { if (!showTrack) return; document.documentElement.classList.add("own-scroll"); return () => document.documentElement.classList.remove("own-scroll"); });
+  const longList = $derived(!unused && total > BATCH), showTrack = $derived(longList && pos.height > 40);
+  $effect(() => { if (!longList) return; document.documentElement.classList.add("own-scroll"); return () => document.documentElement.classList.remove("own-scroll"); });
   const hint = (i: number) => {
     const e = rows?.[Math.min(i, (rows?.length ?? 1) - 1)];
     if (!e || i >= (rows?.length ?? 0)) return "";
@@ -168,8 +173,8 @@
     const start = Math.round(Math.min(Math.max(0, f - vis.size / 2), 1 - vis.size) * total);
     if (start >= (rows?.length ?? 0) && !loadingMore) await loadMore(start + BATCH);
     if (!listEl || !rows?.length) return;
-    const r = listEl.getBoundingClientRect(), idx = Math.min(start, rows.length - 1);
-    scrollTo({ top: scrollY + r.top + (idx / rows.length) * r.height - stick, behavior: "instant" });
+    const r = listEl.getBoundingClientRect(), head = listEl.querySelector("thead")?.getBoundingClientRect().height ?? 0, idx = Math.min(start, rows.length - 1);
+    scrollTo({ top: scrollY + r.top + head + (idx / rows.length) * (r.height - head) - stick - head, behavior: "instant" });
   }
 
   const shown = $derived(unused ? unused.items : rows);
@@ -279,7 +284,7 @@
 
 <svelte:window onscroll={measure} onresize={measure} />
 {#if showTrack}
-  <div class="scrub" class:drag={dragging} role="presentation" bind:this={track} style="top:{stick + 8}px;right:{sbw ? sbw + 6 : 8}px"
+  <div class="scrub" class:drag={dragging} role="presentation" bind:this={track} style="top:{pos.top}px;height:{pos.height}px;left:{pos.left}px"
     onpointerdown={(e) => { dragging = true; track?.setPointerCapture(e.pointerId); jump(point(e)); }}
     onpointermove={(e) => { const f = point(e); if (dragging) jump(f); }}
     onpointerup={() => { dragging = false; bubble = null; }} onpointercancel={() => { dragging = false; bubble = null; }} onpointerleave={() => { clearTimeout(dwell); if (!dragging) bubble = null; }}>
