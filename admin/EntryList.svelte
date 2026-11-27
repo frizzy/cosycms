@@ -141,7 +141,7 @@
     if (headEl) ro.observe(headEl);
     return () => ro.disconnect();
   });
-  // The bar spans only the part of the list that is on screen: below the pinned bars and column heads, ending where the list ends, and just beside the list.
+  // The bar starts where the pinned bars and column heads end (fixed, so it never jumps when they pin), ends where the list ends, and sits just beside the list.
   let pos = $state({ top: 0, height: 0, left: 0 });
   function measure() {
     const sbw = innerWidth - document.documentElement.clientWidth; // a classic scroll bar takes room; the overlay kind (0) floats over the edge
@@ -150,7 +150,7 @@
     const body = r.height - head, bodyTop = r.top + head, shownTop = Math.max(stick + head, bodyTop), shownBottom = Math.min(innerHeight, r.bottom), frac = rows.length / total;
     const a = Math.min(1, Math.max(0, (shownTop - bodyTop) / body)), b = Math.min(1, Math.max(a, (shownBottom - bodyTop) / body));
     vis = { top: a * frac, size: Math.max(0.02, (b - a) * frac) };
-    const top = shownTop + 6, bottom = Math.min(innerHeight - 12, r.bottom);
+    const top = stick + head + 6, bottom = Math.min(innerHeight - 12, r.bottom);
     pos = { top, height: Math.max(0, bottom - top), left: Math.min(r.right + 10, innerWidth - sbw - 22) };
   }
   $effect(() => { rows?.length; total; stick; listEl; tick().then(measure); });
