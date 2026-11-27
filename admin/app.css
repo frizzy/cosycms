@@ -427,3 +427,7 @@ dialog.preview { width:min(46rem, 94vw); } .pv { display:grid; gap:1.4rem; } .pv
 .av .avatar { width:2.75rem; height:2.75rem; } .av:hover:not(:disabled) { border-color:var(--line-strong); filter:none; } .av.on { border-color:var(--accent); }
 :root[data-style=retro] { .avatar, .av { border-radius:0; } }
 .av { color:var(--muted); }
+.mh { list-style:none; margin:0; padding:0; display:grid; gap:.6rem; } .mh li { display:flex; gap:.8rem; align-items:center; }
+.mh-pic img { display:block; width:56px; height:56px; object-fit:cover; border-radius:6px; background:var(--line); } .mh-alt { flex:1; min-width:0; display:grid; gap:.2rem; }
+.mh-alt > a { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; } .mh-alt .inline { flex-wrap:nowrap; gap:.5rem; }
+:root[data-style=retro] { .mh-pic img { border-radius:0; } }

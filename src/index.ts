@@ -17,7 +17,8 @@ import { CollectionCreate, CollectionDef, dataSchema, entryLabel, fileFieldOf, n
 import { bodyLimit } from "hono/body-limit";
 import { githubCheck, githubFailedStep, githubRuns, githubTarget } from "./github";
 import { r2Store } from "./blobs";
-import { KEY_RE, MAX_IMAGE_BYTES, blobKey, blobUrl, sniffImage } from "./images";
+import { KEY_RE, MAX_IMAGE_BYTES, blobKey, blobUrl, sniffImage, type FileValue } from "./images";
+import { weakAlt } from "./alt";
 import { docBlockNames, docImageIds, docLinkIds, fillPictures } from "./markdown";
 import { sha256 } from "./plan";
 import { build, publish } from "./publish";
@@ -557,6 +558,29 @@ app.post("/collections/:key/unused", ownerOnly, async (c) => {
   const used = new Set((await c.env.DB.prepare("select distinct dst from refs").all<{ dst: string }>()).results.map((r) => r.dst));
   const unused = all.filter((e) => !used.has(e.id));
   return c.json({ items: await withThumbs(c, col, unused.slice(0, 200)), total: unused.length, scanned: all.length });
+});
+
+// Media health: every image in every image library (a collection with an upload field), checked for three things people fix by hand.
+// Heavy (reads every library entry), so owners run it on demand. shortcut: each list is capped at 200 and the size limits are fixed; make them settings if they get in the way.
+const LARGE_BYTES = 1.5 * 1024 * 1024, LARGE_SIDE = 3000;
+app.get("/media-health", ownerOnly, async (c) => {
+  await ensureIndex(c);
+  const libs = (await db(c).select().from(collections)).flatMap((col) => { const ff = fileFieldOf(col); return ff ? [{ col, ff, alt: col.fields.find((f) => (f.type === "text" || f.type === "textarea") && /alt/i.test(f.key + f.label)) }] : []; });
+  const used = new Set((await c.env.DB.prepare("select distinct dst from refs").all<{ dst: string }>()).results.map((r) => r.dst));
+  const out = { total: 0, unused: [] as unknown[], large: [] as unknown[], weakAlt: [] as unknown[], counts: { unused: 0, large: 0, weakAlt: 0 } };
+  const add = (kind: "unused" | "large" | "weakAlt", row: Record<string, unknown>) => { out.counts[kind]++; if (out[kind].length < 200) out[kind].push(row); };
+  for (const { col, ff, alt } of libs) {
+    for (const e of await db(c).select().from(entries).where(eq(entries.collection, col.key)).orderBy(desc(entries.updatedAt))) {
+      const file = e.data[ff.key] as FileValue | undefined;
+      if (!file) continue;
+      out.total++;
+      const base = { id: e.id, collection: col.key, label: entryLabel(col.fields, e.data, e.slug, col.titleField), file: { key: file.key, size: file.size, width: file.width, height: file.height } };
+      if (!used.has(e.id)) add("unused", base);
+      if (file.size > LARGE_BYTES || Math.max(file.width ?? 0, file.height ?? 0) > LARGE_SIDE) add("large", base);
+      if (alt) { const text = String(e.data[alt.key] ?? ""); const why = weakAlt(text, file.name, e.slug); if (why) add("weakAlt", { ...base, alt: text, altKey: alt.key, why }); }
+    }
+  }
+  return c.json(out);
 });
 
 /** Entries that point at this one, with their display title (title field, else slug), split by how: `used` (a reference field, an image, a block) and `linked` (a hyperlink in text, written "cosy:entry/<id>"). One entry can be both. */

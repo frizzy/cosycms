@@ -42,6 +42,8 @@ export type Provider = { id: string; name: string; help: string; clientId: strin
 export type Hit = Entry & { match: { title: string; snippet: string | null } }; // title and snippet have the matched words between \u0001 and \u0002
 export type Notice = { id: string; at: string; kind: string; level: "error" | "success" | "info"; title: string; body: string | null; link: string | null; readAt: string | null };
 export type Activity = { id: string; at: string; actor: string; via: string | null; action: string; collection: string | null; entryId: string | null; label: string | null; detail: string | null; undoable: number };
+export type HealthRow = { id: string; collection: string; label: string; file: { key: string; size: number; width?: number; height?: number } };
+export type MediaHealth = { total: number; counts: { unused: number; large: number; weakAlt: number }; unused: HealthRow[]; large: HealthRow[]; weakAlt: (HealthRow & { alt: string; altKey: string; why: string })[] };
 export type Used = { id: string; collection: string; slug: string; title: string };
 export type Trashed = { id: string; at: string; actor: string; collection: string; label: string; entryId: string };
 export type Counts = Record<string, { drafts: number; edited: number }>;
@@ -71,6 +73,7 @@ export const api = {
   connections: () => call<Connection[]>("/connections"),
   disconnect: (id: string) => call<void>(`/connections/${id}`, { method: "DELETE" }),
   logout: () => call<void>("/logout", { method: "POST" }),
+  mediaHealth: () => call<MediaHealth>("/media-health"),
   saveProfile: (p: { name: string | null; avatar: string | null }) => call<Me>("/profile", { method: "PUT", body: JSON.stringify(p) }),
   upload: async (f: File) => {
     const res = await fetch(`/api/uploads?name=${encodeURIComponent(f.name)}`, { method: "PUT", body: f });
