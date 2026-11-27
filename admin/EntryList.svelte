@@ -85,13 +85,26 @@
       unpublish: { title: `Take ${what} off the site?`, message: "The drafts stay. They come off the site on the next Deploy.", confirm: "Unpublish" },
       delete: { title: `Delete ${what}?`, message: "They move to the Trash, where they can be restored for a while. Entries still linked from elsewhere are skipped.", confirm: "Delete", danger: true } }[action];
     if (!(await ask(ask_))) return;
-    working = true; error = "";
+    working = true; error = ""; progress = "";
+    // The server takes 200 at a time, so a big selection goes in batches, one after the other.
+    const ids = sel, bad: typeof failed = []; let done = 0;
     try {
-      const r = await api.bulk(sel, action);
-      failed = r.failed;
-      if (r.done) toast(`${verb[action]} ${r.done} ${r.done === 1 ? "entry" : "entries"}`);
-      reload++; refreshCounts();
-    } catch (e) { error = (e as Error).message; }
+      for (let i = 0; i < ids.length; i += 200) {
+        if (ids.length > 200) progress = `${Math.min(i + 200, ids.length).toLocaleString()} of ${ids.length.toLocaleString()}`;
+        const r = await api.bulk(ids.slice(i, i + 200), action);
+        done += r.done; bad.push(...r.failed);
+      }
+    } catch (e) { error = `${(e as Error).message}${done ? ` (${done} were done before that.)` : ""}`; }
+    failed = bad; progress = "";
+    if (done) toast(`${verb[action]} ${done} ${done === 1 ? "entry" : "entries"}`);
+    reload++; refreshCounts();
+    working = false;
+  }
+  // "Select all N matching": the ids behind the whole search and filter, not only the rows loaded so far.
+  let progress = $state(""), pickedAll = $state(0); // pickedAll: how many the search matched when everything was selected (0 = not selecting everything)
+  async function selectMatching() {
+    working = true; error = "";
+    try { const r = await api.matching(collection, q.trim(), filter); sel = r.ids; pickedAll = r.total; } catch (e) { error = (e as Error).message; }
     working = false;
   }
 
@@ -99,7 +112,7 @@
   $effect(() => {
     query(); reload; filter; collection;
     const keep = reload && rows ? rows.length : 0, was = first ? recall() : null;
-    sel = []; if (!reload) failed = [];
+    sel = []; pickedAll = 0; if (!reload) failed = [];
     let stale = false;
     const t = setTimeout(async () => {
       busy = true; const g = ++gen; loadingMore = false;
@@ -191,14 +204,16 @@
 
 {#if sel.length}
   <div class="bulkbar" role="toolbar" aria-label="Actions for the selection">
-    <strong>{sel.length} selected</strong>
-    <button type="button" class="ghost" disabled={working} onclick={() => (sel = shown?.map((e) => e.id) ?? [])}>Select all loaded</button>
+    <strong>{progress ? `Working… ${progress}` : `${sel.length.toLocaleString()} selected`}</strong>
+    {#if total > sel.length && !unused}<button type="button" class="ghost" disabled={working} onclick={selectMatching}>Select all {total.toLocaleString()} matching</button>
+    {:else if sel.length < (shown?.length ?? 0)}<button type="button" class="ghost" disabled={working} onclick={() => (sel = shown?.map((e) => e.id) ?? [])}>Select all loaded</button>{/if}
     <span class="spacer"></span>
     <button type="button" disabled={working} onclick={() => bulk("publish")}>Publish</button>
     <button type="button" class="ghost" disabled={working} onclick={() => bulk("unpublish")}>Unpublish</button>
     <button type="button" class="danger" disabled={working} onclick={() => bulk("delete")}>Delete</button>
     <button type="button" class="ghost" disabled={working} onclick={() => (sel = [])}>Clear</button>
   </div>
+  {#if pickedAll > sel.length}<p class="notice">Only the first {sel.length.toLocaleString()} of {pickedAll.toLocaleString()} matches are selected. Run the action, then select the rest.</p>{/if}
 {/if}
 {#if gauge}<div class="gauge" aria-hidden="true"><span class="gauge-loaded" style="width:{(rows ? rows.length / total : 0) * 100}%"></span><span class="gauge-view" style="left:{vis.top * 100}%;width:{vis.size * 100}%"></span></div>{/if}
 </div>

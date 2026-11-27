@@ -315,11 +315,9 @@ async function thumbsOf(c: { env: Env["Bindings"] }, col: { fields: Field[]; thu
 
 // The admin's list: search, sort and one page at a time, so a collection can grow without the list slowing down.
 // Search uses the full-text index (slug, tags, text fields and bodies; whole words and word beginnings); sorting by title uses the collection's title field (falling back to the slug), and `relevance` ranks the matches.
-app.get("/entries/search", async (c) => {
-  const { collection = "", q = "", sort = "updated", dir = "desc", filter = "" } = c.req.query();
-  const limit = Math.min(Math.max(parseInt(c.req.query("limit") ?? "") || 25, 1), 100), offset = Math.max(parseInt(c.req.query("offset") ?? "") || 0, 0);
-  const [col] = await db(c).select().from(collections).where(eq(collections.key, collection));
-  if (!col) return c.json({ error: "unknown collection" }, 400);
+// What a list's search box and filter select, shared by the list itself and by "select all matching".
+async function listWhere(c: { env: Env["Bindings"] }, col: { key: string; fields: Field[] }, q: string, filter: string) {
+  const collection = col.key;
   const path = (k: string) => sql`json_extract(${entries.data}, ${`$.${k}`})`; // field keys are validated as letters and digits only
   const fts = ftsQuery(q);
   if (q.trim()) await ensureIndex(c);
@@ -331,6 +329,27 @@ app.get("/entries/search", async (c) => {
   const where = and(eq(entries.collection, collection), filtered, q.trim()
     ? (fts ? sql`${entries.id} in (select d.entry from search join search_doc d on d.id = search.rowid where search match ${fts} and d.collection = ${collection})` : sql`0`) // only punctuation: nothing to match
     : undefined);
+  return { where, fts, path };
+}
+
+// The ids of everything a list's search and filter match (up to a cap), for "select all N matching": the admin then runs the bulk action over them in batches.
+const SELECT_ALL_MAX = 2000;
+app.get("/entries/matching", async (c) => {
+  const { collection = "", q = "", filter = "" } = c.req.query();
+  const [col] = await db(c).select().from(collections).where(eq(collections.key, collection));
+  if (!col) return c.json({ error: "unknown collection" }, 400);
+  const { where } = await listWhere(c, col, q, filter);
+  const [{ total }] = await db(c).select({ total: count() }).from(entries).where(where);
+  const ids = (await db(c).select({ id: entries.id }).from(entries).where(where).orderBy(desc(entries.updatedAt), entries.id).limit(SELECT_ALL_MAX)).map((r) => r.id);
+  return c.json({ ids, total });
+});
+
+app.get("/entries/search", async (c) => {
+  const { collection = "", q = "", sort = "updated", dir = "desc", filter = "" } = c.req.query();
+  const limit = Math.min(Math.max(parseInt(c.req.query("limit") ?? "") || 25, 1), 100), offset = Math.max(parseInt(c.req.query("offset") ?? "") || 0, 0);
+  const [col] = await db(c).select().from(collections).where(eq(collections.key, collection));
+  if (!col) return c.json({ error: "unknown collection" }, 400);
+  const { where, fts, path } = await listWhere(c, col, q, filter);
   const rank = fts ? sql`(select bm25(search, 10.0, 6.0, 1.0, 3.0) from search join search_doc d on d.id = search.rowid where search match ${fts} and d.entry = ${entries.id})` : sql`${entries.updatedAt}`;
   const key = sort === "relevance" ? rank : sort === "slug" ? sql`${entries.slug}` : sort === "status" ? sql`${entries.status}`
     : sort === "title" ? (col.titleField ? sql`lower(coalesce(nullif(trim(${path(col.titleField)}), ''), ${entries.slug}))` : sql`${entries.slug}`)

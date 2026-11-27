@@ -96,6 +96,7 @@ export const api = {
   saveSettings: (s: SettingsInput) => call<void>("/settings", { method: "PUT", body: JSON.stringify(s) }),
   search: (collection: string, o: { q: string; sort: string; dir: "asc" | "desc"; limit: number; offset: number; filter?: string }) =>
     call<{ items: Entry[]; total: number }>(`/entries/search?${new URLSearchParams({ collection, q: o.q, sort: o.sort, dir: o.dir, limit: String(o.limit), offset: String(o.offset), filter: o.filter ?? "" })}`),
+  matching: (collection: string, q: string, filter: string) => call<{ ids: string[]; total: number }>(`/entries/matching?${new URLSearchParams({ collection, q, filter })}`),
   list: (collection?: string) => call<Entry[]>("/entries" + (collection ? `?collection=${encodeURIComponent(collection)}` : "")),
   unused: (collection: string) => call<{ items: Entry[]; total: number; scanned: number }>(`/collections/${collection}/unused`, { method: "POST" }),
   usage: (id: string) => call<{ items: Used[]; links: Used[] }>(`/entries/${id}/usage`),
