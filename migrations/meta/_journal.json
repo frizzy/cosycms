@@ -169,6 +169,13 @@
       "when": 1795782513212,
       "tag": "0024_entry_keep_case",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1795785876631,
+      "tag": "0025_entry_unpublish_at",
+      "breakpoints": true
     }
   ]
 }

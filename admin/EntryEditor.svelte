@@ -11,30 +11,32 @@
   import { toast } from "./toast.svelte";
   import { saveShortcut } from "./keys";
   import FieldInput from "./FieldInput.svelte";
+  import PreviewDialog from "./PreviewDialog.svelte";
   import LiveIcon from "./LiveIcon.svelte";
   import { isEmpty } from "./util";
   let { collection, id }: { collection: string; id?: string } = $props();
 
   const c = store.collections.find((x) => x.key === collection)!;
-  const GO_LIVE = { key: "publishAt", label: "Go live", type: "datetime" } as Field;
+  const GO_LIVE = { key: "publishAt", label: "Go live", type: "datetime" } as Field, TAKE_DOWN = { key: "unpublishAt", label: "Take down", type: "datetime" } as Field;
   let slug = $state("");
-  let published = $state(false), pending = $state(false), sched = $state<Entry["schedule"]>(), publishAt = $state<string | null | undefined>(), publishedAt = $state<string | null | undefined>(), revisedAt = $state<string | null | undefined>(); // has a published version; the draft has moved on from it
-  let data = $state<Record<string, unknown>>({}), tidied = $state<string[]>([]), kept = $state<Record<string, string[]>>({}), rev = $state(0); // tidied: fields the server capitalised on the last save; rev remounts the editors so they show it
+  let published = $state(false), pending = $state(false), sched = $state<Entry["schedule"]>(), publishAt = $state<string | null | undefined>(), unpublishAt = $state<string | null | undefined>(), publishedAt = $state<string | null | undefined>(), revisedAt = $state<string | null | undefined>(); // has a published version; the draft has moved on from it
+  let previewing = $state(false), data = $state<Record<string, unknown>>({}), tidied = $state<string[]>([]), kept = $state<Record<string, string[]>>({}), rev = $state(0); // tidied: fields the server capitalised on the last save; rev remounts the editors so they show it
   let loading = $state(!!id);
   let saving = $state(false);
   let error = $state("");
 
   // The draft and the live version as last seen on the server, so a save or a publish can say what it changed.
-  type Snap = { slug: string; publishAt: string | null; data: Record<string, unknown> };
+  type Snap = { slug: string; publishAt: string | null; unpublishAt?: string | null; data: Record<string, unknown> };
   let snap = $state<Snap | null>(null), liveSnap = $state<Snap | null>(null), view = $state<ChangeView | null>(null), createdId = "";
   const copy = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
   const cleanData = () => Object.fromEntries(Object.entries(data).filter(([, v]) => !isEmpty(v))); // empty values dropped, so optional fields don't fail validation
-  const nowSnap = (): Snap => ({ slug, publishAt: publishAt ?? null, data: copy(cleanData()) });
+  const nowSnap = (): Snap => ({ slug, publishAt: publishAt ?? null, unpublishAt: unpublishAt ?? null, data: copy(cleanData()) });
   const local = (iso: string | null) => (iso ? new Date(iso).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }) : "—");
   function changesBetween(a: Snap, b: Snap, dates: boolean): Change[] {
     return [
       ...(a.slug && a.slug !== b.slug ? [{ key: "slug", label: "Slug", kind: "value", before: a.slug, after: b.slug } as Change] : []),
       ...(dates && c.dates && (a.publishAt ?? null) !== (b.publishAt ?? null) ? [{ key: "publishAt", label: "Go live", kind: "value", before: local(a.publishAt), after: local(b.publishAt) } as Change] : []),
+      ...(dates && c.dates && (a.unpublishAt ?? null) !== (b.unpublishAt ?? null) ? [{ key: "unpublishAt", label: "Take down", kind: "value", before: local(a.unpublishAt ?? null), after: local(b.unpublishAt ?? null) } as Change] : []),
       ...fieldChanges(c.fields, a.data, b.data),
     ];
   }
@@ -73,7 +75,7 @@
 
   // Unsaved-changes tracking. Empty values are normalised away so a form that merely rendered isn't "dirty".
   const present = (v: unknown) => !(v === "" || v == null || v === false || (Array.isArray(v) && !v.length) || (typeof v === "number" && Number.isNaN(v)));
-  const fingerprint = () => JSON.stringify([slug, publishAt ?? null, Object.entries(data).filter(([, v]) => present(v)).sort(([x], [y]) => (x < y ? -1 : 1))]);
+  const fingerprint = () => JSON.stringify([slug, publishAt ?? null, unpublishAt ?? null, Object.entries(data).filter(([, v]) => present(v)).sort(([x], [y]) => (x < y ? -1 : 1))]);
   let baseline = $state<string>();
   const rebase = () => (baseline = fingerprint());
   // A draft with a future go-live time is scheduled when saved, and can't be published by hand until then.
@@ -90,10 +92,10 @@
   $effect(() => () => { store.dirty = false; });
 
   function adopt(e: Entry) {
-    snap = { slug: e.slug, publishAt: e.publishAt ?? null, data: copy(e.data) };
+    snap = { slug: e.slug, publishAt: e.publishAt ?? null, unpublishAt: e.unpublishAt ?? null, data: copy(e.data) };
     liveSnap = e.live ? { slug: e.live.slug, publishAt: null, data: copy(e.live.data) } : null;
     kept = e.keepCase ?? {};
-    savedSlug = e.slug; ({ slug, data, published, pending, schedule: sched, publishAt, publishedAt, revisedAt } = e);
+    savedSlug = e.slug; ({ slug, data, published, pending, schedule: sched, publishAt, unpublishAt, publishedAt, revisedAt } = e);
   }
   $effect(() => {
     if (!id) return;
@@ -112,9 +114,9 @@
     const clean = cleanData();
     saving = true;
     try {
-      const body = { collection, slug, data: clean, ...(Object.keys(keepCase).length ? { keepCase } : {}), ...(c.dates ? { publishAt: publishAt || null } : {}) };
+      const body = { collection, slug, data: clean, ...(Object.keys(keepCase).length ? { keepCase } : {}), ...(c.dates ? { publishAt: publishAt || null, unpublishAt: unpublishAt || null } : {}) };
       let target = id, saved: Record<string, unknown> = {};
-      if (id) { const e = await api.update(id, body); saved = e.data; kept = e.keepCase ?? {}; ({ published, pending, schedule: sched, publishAt, publishedAt, revisedAt } = e); }
+      if (id) { const e = await api.update(id, body); saved = e.data; kept = e.keepCase ?? {}; ({ published, pending, schedule: sched, publishAt, unpublishAt, publishedAt, revisedAt } = e); }
       else { const e = await api.create(body); target = createdId = e.id; sched = e.schedule; saved = e.data; kept = e.keepCase ?? {}; }
       // Capitalisation is applied by the server; take its result, and remember which fields it touched.
       const fixed = c.fields.filter((f) => "casing" in f && f.casing && JSON.stringify(saved[f.key] ?? null) !== JSON.stringify(clean[f.key] ?? null));
@@ -124,7 +126,7 @@
       refreshCounts();
       savedSlug = slug; if (source) locked = true;
       rebase(); store.dirty = false; // clean first so the leave-guard stays quiet
-      snap = { slug, publishAt: publishAt ?? null, data: copy(clean) };
+      snap = { slug, publishAt: publishAt ?? null, unpublishAt: unpublishAt ?? null, data: copy(clean) };
       saving = false;
       return target ?? null;
     } catch (e) { error = (e as Error).message; }
@@ -201,7 +203,7 @@
     view = { ...review, stage: "working", error: "" };
     if (dirty && !(await persist(keepNext))) { view = { ...review, error }; return; }
     try {
-      ({ published, pending, schedule: sched, publishAt, publishedAt, revisedAt } = await api.publishEntry(id));
+      ({ published, pending, schedule: sched, publishAt, unpublishAt, publishedAt, revisedAt } = await api.publishEntry(id));
       liveSnap = nowSnap(); refreshCounts();
       view = { stage: "done", title: "Published", status: "It goes to the site on the next Deploy.", changes: review.changes, empty: "", note: tidyNote() };
     } catch (e) { view = { ...review, error: (e as Error).message }; }
@@ -209,7 +211,7 @@
   async function unpublish() {
     if (!id || !(await ask({ title: "Take this off the site?", message: "The draft stays. It comes off the site on the next Deploy.", confirm: "Unpublish" }))) return;
     try {
-      ({ published, pending, schedule: sched, publishAt, publishedAt, revisedAt } = await api.unpublishEntry(id));
+      ({ published, pending, schedule: sched, publishAt, unpublishAt, publishedAt, revisedAt } = await api.unpublishEntry(id));
       liveSnap = null; refreshCounts();
       view = { stage: "done", title: "Unpublished", status: "It comes off the site on the next Deploy. The draft stays.", changes: [], empty: "" };
     } catch (e) { error = (e as Error).message; }
@@ -260,6 +262,8 @@
     </div>
     {#if c.dates}
       <FieldInput field={GO_LIVE} bind:value={publishAt} locked={published ? "Locked while published. Unpublish to change it." : ""} />
+      <FieldInput field={TAKE_DOWN} bind:value={unpublishAt} />
+      {#if unpublishAt && Date.parse(unpublishAt) > Date.now()}<small class="muted">{published || publishAt ? "It comes off the site and deploys then; the draft stays." : "Once published, it comes off the site and deploys then; the draft stays."}</small>{:else if !unpublishAt}<small class="muted">Optional. Set a time to have it taken off the site and deployed then.</small>{/if}
       {#if !published && !publishAt}<small class="muted">Optional. Set a future time and Save and schedule to have it published and deployed then.</small>{/if}
       {#if publishedAt}<small class="muted">First published {new Date(publishedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}{revisedAt && revisedAt !== publishedAt ? `, last revised ${new Date(revisedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}` : ""}.</small>{/if}
     {/if}
@@ -269,6 +273,7 @@
       {#if id && !later && (!published || pending || dirty)}<button type="button" onclick={publish} disabled={saving}>{published ? "Publish changes" : "Publish"}</button>{/if}
       {#if id && published && pending && !dirty}<button type="button" class="ghost" onclick={revert}>Discard draft changes</button>{/if}
       {#if id && published}<button type="button" class="ghost" onclick={unpublish}>Unpublish</button>{/if}
+      <button type="button" class="ghost" onclick={() => (previewing = true)}>Preview</button>
       {#if id}<button type="button" class="danger" onclick={remove}>Delete</button>{/if}
       <span class="status">{#if error}<span class="error">{error}</span>{:else if dirty}<span class="dirty">Unsaved changes</span>{/if}</span>
     </div>
@@ -290,4 +295,5 @@
   .usage li { overflow-wrap: anywhere; }
 </style>
 
+<PreviewDialog open={previewing} fields={c.fields} data={cleanData()} titleField={c.titleField} onclose={() => (previewing = false)} />
 <ChangeDialog {view} canList={!c.single} onconfirm={onConfirm} onclose={closeView} onlist={toList} />

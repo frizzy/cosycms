@@ -32,6 +32,7 @@ const Input = z.object({
   slug: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "lowercase letters, numbers and dashes"),
   data: z.record(z.string(), z.unknown()),
   publishAt: z.iso.datetime().nullish(), // go-live time (collections with dates); absent = leave as is, null = clear
+  unpublishAt: z.iso.datetime().nullish(), // the time it comes off the site again; same rules
   keepCase: z.record(z.string(), z.array(z.string())).optional(), // per field, text the person chose to leave as typed (see casing.ts); absent = use what is remembered
 });
 
@@ -275,8 +276,10 @@ async function ensureIndex(c: { env: Env["Bindings"] }) {
 }
 
 /** Keeps the entry's job in step with its go-live time: a draft with a future time is scheduled; a published entry or any other time is not. */
-const syncSchedule = (c: { env: Env["Bindings"] }, e: { id: string; publishAt: Date | null; live: unknown }) =>
-  setJob(c.env.DB, "entry.publish", e.id, e.live ? null : futureTime(e.publishAt));
+const syncSchedule = async (c: { env: Env["Bindings"] }, e: { id: string; publishAt: Date | null; unpublishAt?: Date | null; live: unknown }) => {
+  await setJob(c.env.DB, "entry.publish", e.id, e.live ? null : futureTime(e.publishAt));
+  await setJob(c.env.DB, "entry.unpublish", e.id, futureTime(e.unpublishAt)); // runs whether or not it is live yet: a draft that goes live later still comes down
+};
 
 // A list row's thumbnail: the storage key of its image, straight from an upload field, or looked up through a reference to an image library.
 async function withThumbs(c: { env: Env["Bindings"] }, col: { fields: Field[]; thumbField?: string | null }, rows: Row[]) {
@@ -412,7 +415,7 @@ app.post("/entries", async (c) => {
   const input = await parseEntry(c, await c.req.json(), true);
   if (!input.value) return c.json(input.error, 400);
   const [col] = await db(c).select({ single: collections.single, dates: collections.dates }).from(collections).where(eq(collections.key, input.value.collection));
-  const row = { ...input.value, id: crypto.randomUUID(), updatedAt: new Date(), publishAt: col?.dates && input.value.publishAt ? new Date(input.value.publishAt) : null };
+  const row = { ...input.value, id: crypto.randomUUID(), updatedAt: new Date(), publishAt: col?.dates && input.value.publishAt ? new Date(input.value.publishAt) : null, unpublishAt: col?.dates && input.value.unpublishAt ? new Date(input.value.unpublishAt) : null };
   if (col?.single && (await db(c).select({ n: count() }).from(entries).where(eq(entries.collection, row.collection)))[0].n) return c.json({ error: "This collection holds a single entry. Edit that one instead." }, 409);
   try { await db(c).insert(entries).values(row); }
   catch (e) { if (isConflict(e)) return c.json({ error: "slug already exists in this collection" }, 409); throw e; }
@@ -430,7 +433,9 @@ app.put("/entries/:id", async (c) => {
   const [col] = await db(c).select({ dates: collections.dates }).from(collections).where(eq(collections.key, old.collection));
   const given = input.value.publishAt, publishAt = !col?.dates ? null : given === undefined ? old.publishAt : given ? new Date(given) : null;
   if (old.live && publishAt?.getTime() !== old.publishAt?.getTime()) return c.json({ error: "The go-live time is locked while the entry is published. Unpublish it first to change it." }, 409);
-  const row = { ...input.value, publishAt, updatedAt: new Date(), pending: differs(old.live, input.value.slug, input.value.data) };
+  const givenOff = input.value.unpublishAt, unpublishAt = !col?.dates ? null : givenOff === undefined ? old.unpublishAt : givenOff ? new Date(givenOff) : null;
+  if (publishAt && unpublishAt && unpublishAt <= publishAt) return c.json({ error: "The take-down time must be after the go-live time." }, 400);
+  const row = { ...input.value, publishAt, unpublishAt, updatedAt: new Date(), pending: differs(old.live, input.value.slug, input.value.data) };
   try {
     const [res] = await db(c).update(entries).set(row).where(eq(entries.id, old.id)).returning();
     const changed = [...(old.slug !== res.slug ? ["slug"] : []), ...changedKeys(old.data, res.data)];
@@ -699,6 +704,18 @@ const handlers = (env: Env["Bindings"]) => ({
     const [d] = await db({ env }).select().from(schedule).where(and(eq(schedule.kind, "deploy.run"), eq(schedule.ref, "site")));
     await setJob(env.DB, "deploy.run", "site", new Date(), [...new Set([...(d && d.status !== "done" ? d.payload ?? [] : []), row.id])]);
   },
+  "entry.unpublish": async (job: Job) => {
+    const [row] = await db({ env }).select().from(entries).where(eq(entries.id, job.ref));
+    if (!row || !row.unpublishAt || row.unpublishAt > job.runAt) { await setJob(env.DB, job.kind, job.ref, null); return; } // changed since: no longer applies
+    if (row.live) {
+      const [res] = await db({ env }).update(entries).set({ live: null, status: "draft", pending: false }).where(eq(entries.id, row.id)).returning();
+      await logActivity(env.DB, SCHEDULER, { action: "entry.unpublish", collection: res.collection, entryId: res.id, label: await labelOf({ env }, res), detail: "(scheduled)" });
+      await indexEntry({ env }, res);
+      const [d] = await db({ env }).select().from(schedule).where(and(eq(schedule.kind, "deploy.run"), eq(schedule.ref, "site")));
+      await setJob(env.DB, "deploy.run", "site", new Date(), [...new Set([...(d && d.status !== "done" ? d.payload ?? [] : []), row.id])]);
+    }
+    await db({ env }).update(entries).set({ unpublishAt: null }).where(eq(entries.id, row.id)); // done; the time is spent
+  },
   "deploy.run": async (job: Job) => {
     const { token, tokenError, repo, branch, dir } = await loadGithub(env.DB, env);
     if (tokenError || !token || !repo) throw new Error(tokenError ?? "GitHub target not configured");
@@ -748,8 +765,8 @@ const watchBuild = (d1: D1Database, sha: string) => setJob(d1, "ci.check", sha, 
 /** One tick: run what is due, then once more for the jobs that first pass queued (the deploy after a publish). */
 export async function tick(env: Env["Bindings"]) {
   const h = handlers(env), failed = async (job: Job, error: string) => {
-    const [e] = job.kind === "entry.publish" ? await db({ env }).select().from(entries).where(eq(entries.id, job.ref)) : [];
-    await notify(env.DB, { kind: "job", ref: job.id, level: "error", title: e ? `Scheduled publish failed: ${await labelOf({ env }, e)}` : job.kind === "deploy.run" ? "Scheduled deploy failed" : `${job.kind} failed`, body: error, link: e ? `#/${e.collection}/${e.id}` : undefined });
+    const [e] = job.kind === "entry.publish" || job.kind === "entry.unpublish" ? await db({ env }).select().from(entries).where(eq(entries.id, job.ref)) : [];
+    await notify(env.DB, { kind: "job", ref: job.id, level: "error", title: e ? `Scheduled ${job.kind === "entry.unpublish" ? "unpublish" : "publish"} failed: ${await labelOf({ env }, e)}` : job.kind === "deploy.run" ? "Scheduled deploy failed" : `${job.kind} failed`, body: error, link: e ? `#/${e.collection}/${e.id}` : undefined });
   };
   const a = await runDue(env.DB, h, Date.now(), failed), b = await runDue(env.DB, h, Date.now(), failed);
   if (new Date().getMinutes() === 0) await pruneHistory(env.DB).catch(() => {}); // hourly: copies past the history limits

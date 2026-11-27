@@ -16,7 +16,7 @@
   import { untrack } from "svelte";
 
   // `value` is Tiptap JSON. Legacy plain-text values (from the old textarea field) are converted on load.
-  let { value = $bindable(), library, blocks = [], imageComponent, templates = [] }: { value?: unknown; library?: string; blocks?: BlockDef[]; imageComponent?: string; templates?: TemplateDef[] } = $props();
+  let { value = $bindable(), library, blocks = [], imageComponent, templates = [], readonly = false }: { readonly?: boolean; value?: unknown; library?: string; blocks?: BlockDef[]; imageComponent?: string; templates?: TemplateDef[] } = $props();
   const blockMap = $derived(new Map(blocks.map((b) => [b.key, b])));
   const libCol = $derived(library ? store.collections.find((c) => c.key === library) : undefined);
 
@@ -74,7 +74,7 @@
   $effect(() => untrack(() => {
     const initial = value;
     const ed = new Editor({
-      element: host,
+      element: host, editable: !readonly,
       extensions: [...richExtensions({ replace: (pos) => { replacing = pos; picker?.open(); }, remove: removeImage, href: (id) => (library ? `#/${library}/${id}` : undefined), options: () => !!imageComponent, set: setImage }), ...blockExtensions(blocks, { edit: editBlock, remove: removeBlock })],
       content: typeof initial === "string" ? fromText(initial) : (initial as object | undefined),
       onTransaction: () => queueMicrotask(() => tick++), // deferred: a blur fired while the editor is being torn down must not mutate state mid-teardown
@@ -160,7 +160,8 @@
 </script>
 
 <svelte:window onclick={(e) => { if (!(e.target as Element).closest(".blockmenu")) { menuOpen = false; tplOpen = false; } }} onkeydown={(e) => { if (e.key === "Escape") menuOpen = tplOpen = false; }} />
-<div class="editor">
+<div class="editor" class:readonly>
+  {#if !readonly}
   <!-- mousedown preventDefault keeps focus (and the selection) in the editor when clicking buttons -->
   <div class="toolbar" role="toolbar" tabindex="-1" onmousedown={(e) => e.preventDefault()}>
     {#each buttons as b}
@@ -191,6 +192,7 @@
     {/if}
     <button type="button" class="md" title="View, edit or paste Markdown" onclick={openMarkdown}>Markdown</button>
   </div>
+  {/if}
   <div bind:this={host}></div>
 </div>
 

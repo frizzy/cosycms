@@ -404,3 +404,9 @@ table.list thead th { position:sticky; top:var(--stick, 0px); z-index:5; backgro
 table.list th.c-updated, table.list td.c-updated { text-align:right; }
 .cd-note { margin:0 0 .8rem; padding:.45rem .7rem; background:var(--accent-soft); color:var(--accent-text); border-radius:var(--radius); font-size:.9rem; }
 .chg h3 .cd-opt { display:inline-flex; margin-left:.8rem; font-weight:400; font-size:.85rem; }
+dialog.preview { width:min(46rem, 94vw); } .pv { display:grid; gap:1.4rem; } .pv h2 { margin:0; font-size:1.7rem; } .pv h3 { margin:0 0 .35rem; font-size:.85rem; color:var(--muted); font-weight:600; } .pv p { margin:0; overflow-wrap:anywhere; } .pv-text { white-space:pre-wrap; }
+.pv-img { max-width:100%; border-radius:var(--radius); } .pv-refs { display:flex; flex-wrap:wrap; gap:.75rem; } .pv-refs figure { margin:0; width:min(100%, 20rem); } .pv-refs img { width:100%; height:auto; border-radius:var(--radius); }
+.pv img { cursor:zoom-in; } .pv-refs figcaption { font-size:.8rem; margin-top:.2rem; overflow-wrap:anywhere; }
+/* Read-only keeps what a block says (its label and settings, like a button's link) but drops the controls. */
+.editor.readonly .block-head button, .editor.readonly .libblock .block-head { display:none; } .editor.readonly .block-head { cursor:default; }
+.editor.readonly .ProseMirror { border-color:transparent; padding:.5rem .75rem; min-height:0; background:transparent; }

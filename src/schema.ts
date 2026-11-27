@@ -18,6 +18,7 @@ export const entries = sqliteTable("entries", {
   publishAt: integer({ mode: "timestamp_ms" }),
   publishedAt: integer({ mode: "timestamp_ms" }), // the first time it went live
   revisedAt: integer({ mode: "timestamp_ms" }),   // the latest publish
+  unpublishAt: integer({ mode: "timestamp_ms" }), // when a published entry takes itself off the site (collections with `dates`); a job in `schedule` carries it out
   keepCase: text({ mode: "json" }).$type<Record<string, string[]> | null>(), // per field, the text pieces the person opted out of automatic capitalisation for (matched by their text as typed)
 }, (t) => [uniqueIndex("entries_path").on(t.collection, t.slug), index("entries_status").on(t.status)]);
 
