@@ -3,7 +3,8 @@ import { drizzle } from "drizzle-orm/d1";
 import { getTableColumns } from "drizzle-orm";
 import { and, count, desc, eq, inArray, isNull, like, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import { activity, blocks, collections, entries, notifications, schedule, settings, templates } from "./schema";
+import { activity, blocks, collections, entries, notifications, schedule, settings, templates, users } from "./schema";
+import { AVATAR_IDS } from "./avatars";
 import { notify, successWanted } from "./notifications";
 import { unitsOf } from "./casing";
 import { INDEX_VERSION, type Indexable, ftsQuery, rebuild as rebuildAll, reindex, reindexTemplate, searchIndex, unindex, unindexTemplate } from "./search";
@@ -103,6 +104,17 @@ async function parseEntry(c: { env: Env["Bindings"] }, raw: unknown, creating: b
   const { keepCase: _, ...rest } = base.data;
   return { value: { ...rest, keepCase: Object.keys(kept).length ? kept : null, data: out as Record<string, unknown> } };
 }
+
+// Your own name and picture. A picture is a preset id or an image you uploaded; both are checked, so nothing else can be stored here.
+app.put("/profile", humanOnly, async (c) => {
+  const body = z.object({ name: z.string().trim().max(60).nullable(), avatar: z.string().max(200).nullable() }).safeParse(await c.req.json().catch(() => null));
+  if (!body.success) return c.json({ error: "Use a name up to 60 characters." }, 400);
+  const { avatar } = body.data;
+  if (avatar && !AVATAR_IDS.includes(avatar) && !(KEY_RE.test(avatar) && (await r2Store(c.env.BLOBS).head(avatar)))) return c.json({ error: "Pick one of the pictures, or upload an image." }, 400);
+  const me = c.get("user");
+  await db(c).update(users).set({ name: body.data.name || null, avatar: avatar || null }).where(eq(users.id, me.id));
+  return c.json({ ...me, name: body.data.name || null, avatar: avatar || null });
+});
 
 app.put("/uploads", bodyLimit({ maxSize: MAX_IMAGE_BYTES, onError: (c) => c.json({ error: "That image is larger than 10 MB." }, 413) }), async (c) => {
   const bytes = new Uint8Array(await c.req.arrayBuffer());
@@ -232,7 +244,7 @@ app.put("/collections/:key", ownerOnly, async (c) => {
   const changed = shapeChanges(old.fields, input.data.fields);
   if (changed.length) return c.json({ error: `type or single/multi can't change for: ${changed.join(", ")}. Add a new field instead.` }, 400);
   // Optional settings are set to null, not undefined, so that clearing them actually clears the column.
-  const [row] = await db(c).update(collections).set({ ...input.data, slugSource: input.data.slugSource ?? null, titleField: input.data.titleField ?? null, urlTemplate: input.data.urlTemplate ?? null, thumbField: input.data.thumbField ?? null, dates: input.data.dates ?? false, format: input.data.format ?? null, folder: input.data.folder ?? null, bodyField: input.data.bodyField ?? null, single: input.data.single ?? false, updatedAt: new Date() }).where(eq(collections.key, old.key)).returning();
+  const [row] = await db(c).update(collections).set({ ...input.data, slugSource: input.data.slugSource ?? null, titleField: input.data.titleField ?? null, urlTemplate: input.data.urlTemplate ?? null, thumbField: input.data.thumbField ?? null, dates: input.data.dates ?? false, stats: input.data.stats ?? false, format: input.data.format ?? null, folder: input.data.folder ?? null, bodyField: input.data.bodyField ?? null, single: input.data.single ?? false, updatedAt: new Date() }).where(eq(collections.key, old.key)).returning();
   await log(c, { action: "collection.save", collection: old.key, label: row.label, detail: "changed" });
   return c.json(row);
 });

@@ -85,7 +85,7 @@
   let keyTouched = $state(!!existing);
   let single = $state(!!existing?.single);
   let slugSource = $state(existing?.slugSource ?? ""), titleField = $state(existing?.titleField ?? ""), thumbField = $state(existing?.thumbField ?? "");
-  let dates = $state(!!existing?.dates);
+  let dates = $state(!!existing?.dates), stats = $state(!!existing?.stats);
   let format = $state<"json" | "markdown" | "mdx">(existing?.format ?? "json"), bodyField = $state(existing?.bodyField ?? ""), folder = $state(existing?.folder ?? ""), urlTemplate = $state(existing?.urlTemplate ?? "");
   const isMd = $derived(format === "markdown" || format === "mdx");
   let rows = $state<Row[]>(existing ? existing.fields.map(toRow) : []);
@@ -124,7 +124,7 @@
     ev.preventDefault(); error = ""; busy = true;
     try {
       const body = {
-        label, single, dates, slugSource: sources.some((r) => r.key === slugSource) ? slugSource : undefined, titleField: titles.some((r) => r.key === titleField) ? titleField : null, thumbField: thumbs.some((r) => r.key === thumbField) ? thumbField : null, fields: rows.map(toField),
+        label, single, dates, stats, slugSource: sources.some((r) => r.key === slugSource) ? slugSource : undefined, titleField: titles.some((r) => r.key === titleField) ? titleField : null, thumbField: thumbs.some((r) => r.key === thumbField) ? thumbField : null, fields: rows.map(toField),
         format: format === "json" ? null : format, folder: folder.trim() || null, urlTemplate: urlTemplate.trim() || null,
         bodyField: isMd && richRows.some((r) => r.key === bodyField) ? bodyField : null,
       };
@@ -171,6 +171,8 @@
     </label>
     <label class="check"><input type="checkbox" bind:checked={dates} />Has publish dates
       <small class="muted">Entries get a go-live time: save a draft with a future time and it is published and deployed then. The published file also gets <code>publishedAt</code> and <code>revisedAt</code>.</small></label>
+    <label class="check"><input type="checkbox" bind:checked={stats} />Word count and reading time
+      <small class="muted">The published file gets <code>wordCount</code> and <code>readingTime</code> (minutes, at 200 words a minute), counted from the body field or, without one, every rich text field. The editor shows them as you write.</small></label>
 
     <label>Title shown in lists
       <select bind:value={titleField}>

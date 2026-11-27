@@ -8,6 +8,7 @@
   import SearchSettings from "./SearchSettings.svelte";
   import BackupSettings from "./BackupSettings.svelte";
   import HistorySettings from "./HistorySettings.svelte";
+  import ProfileSettings from "./ProfileSettings.svelte";
   import AppearanceSettings from "./AppearanceSettings.svelte";
   import { settingsTabs } from "./settingsTabs";
 
@@ -18,7 +19,8 @@
 </script>
 
 <header><h1>{tabs.find((t) => t.id === current)?.label}</h1></header>
-{#if current === "publishing"}<PublishSettings />
+{#if current === "profile"}<ProfileSettings />
+{:else if current === "publishing"}<PublishSettings />
 {:else if current === "signin"}<SignInSettings />
 {:else if current === "people"}<PeopleSettings />
 {:else if current === "notifications"}<NotifySettings />

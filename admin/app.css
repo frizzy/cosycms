@@ -420,3 +420,10 @@ dialog.preview { width:min(46rem, 94vw); } .pv { display:grid; gap:1.4rem; } .pv
 .editor.readonly .block-head button, .editor.readonly .libblock .block-head { display:none; } .editor.readonly .block-head { cursor:default; }
 .editor.readonly .ProseMirror { border-color:transparent; padding:.5rem .75rem; min-height:0; background:transparent; }
 .tools { display:flex; align-items:center; gap:.4rem; }
+.stats { margin:0; font-size:.85rem; }
+.avatar { border-radius:50%; display:block; object-fit:cover; flex:none; } .icon-btn .avatar { width:1.5rem; height:1.5rem; }
+.avatars { display:flex; flex-wrap:wrap; gap:.5rem; }
+.av { width:3.1rem; height:3.1rem; padding:0; display:grid; place-items:center; background:var(--surface); border:2px solid transparent; border-radius:50%; cursor:pointer; filter:none; }
+.av .avatar { width:2.75rem; height:2.75rem; } .av:hover:not(:disabled) { border-color:var(--line-strong); filter:none; } .av.on { border-color:var(--accent); }
+:root[data-style=retro] { .avatar, .av { border-radius:0; } }
+.av { color:var(--muted); }

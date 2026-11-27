@@ -36,8 +36,8 @@ export type SettingsInput = { repo: string; branch: string; dir: string; token?:
 
 export type CollectionInput = { key?: string; label: string; slugSource?: string | null; titleField?: string | null; thumbField?: string | null; format?: "json" | "markdown" | "mdx" | null; folder?: string | null; bodyField?: string | null; urlTemplate?: string | null; single?: boolean; dates?: boolean; fields: Field[] };
 
-export type Me = { id: string; email: string; role: "owner" | "member" };
-export type Person = { id: string; email: string; role: "owner" | "member"; hasPassword: boolean };
+export type Me = { id: string; email: string; role: "owner" | "member"; name?: string | null; avatar?: string | null };
+export type Person = { id: string; name?: string | null; avatar?: string | null; email: string; role: "owner" | "member"; hasPassword: boolean };
 export type Provider = { id: string; name: string; help: string; clientId: string; hasSecret: boolean; error?: string; source: "settings" | "environment" | null; callback: string };
 export type Hit = Entry & { match: { title: string; snippet: string | null } }; // title and snippet have the matched words between \u0001 and \u0002
 export type Notice = { id: string; at: string; kind: string; level: "error" | "success" | "info"; title: string; body: string | null; link: string | null; readAt: string | null };
@@ -71,6 +71,7 @@ export const api = {
   connections: () => call<Connection[]>("/connections"),
   disconnect: (id: string) => call<void>(`/connections/${id}`, { method: "DELETE" }),
   logout: () => call<void>("/logout", { method: "POST" }),
+  saveProfile: (p: { name: string | null; avatar: string | null }) => call<Me>("/profile", { method: "PUT", body: JSON.stringify(p) }),
   upload: async (f: File) => {
     const res = await fetch(`/api/uploads?name=${encodeURIComponent(f.name)}`, { method: "PUT", body: f });
     const body = (await res.json().catch(() => ({}))) as FileValue & { error?: string };

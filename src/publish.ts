@@ -22,7 +22,7 @@ async function prepare(d1: D1Database, targetName: string) {
   const dated = new Set(cols.filter((c) => c.dates).map((c) => c.key)), now = new Date();
   const dates = (e: (typeof all)[number]) => (dated.has(e.collection) ? { ...(e.publishedAt ? { publishedAt: e.publishedAt.toISOString() } : {}), ...(e.revisedAt ? { revisedAt: e.revisedAt.toISOString() } : {}) } : {});
   const rows = all.flatMap((e) => (e.live && !(dated.has(e.collection) && e.publishAt && e.publishAt > now) ? [{ ...e, slug: e.live.slug, data: { ...e.live.data, ...dates(e) } }] : []));
-  const ctx: RenderCtx = { collections: new Map(cols.map((c) => [c.key, { fields: c.fields, format: c.format, bodyField: c.bodyField, folder: c.folder, urlTemplate: c.urlTemplate, dates: c.dates }])), entries: new Map(all.map((e) => [e.id, { collection: e.collection, slug: e.live?.slug ?? e.slug, data: e.live?.data ?? e.data }])), blocks: new Map(defs.map((d) => [d.key, d])) };
+  const ctx: RenderCtx = { collections: new Map(cols.map((c) => [c.key, { fields: c.fields, format: c.format, bodyField: c.bodyField, folder: c.folder, urlTemplate: c.urlTemplate, dates: c.dates, stats: c.stats }])), entries: new Map(all.map((e) => [e.id, { collection: e.collection, slug: e.live?.slug ?? e.slug, data: e.live?.data ?? e.data }])), blocks: new Map(defs.map((d) => [d.key, d])) };
   const planned = await plan(rows, state, ctx);
   return { db, planned, warnings: draftWarnings(rows, new Map(all.map((e) => [e.id, e])), ctx) };
 }

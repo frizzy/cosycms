@@ -31,6 +31,7 @@
   import SchedulePage from "./SchedulePage.svelte";
   import ClockIcon from "./ClockIcon.svelte";
   import UserIcon from "./UserIcon.svelte";
+  import Avatar from "./Avatar.svelte";
   import BackIcon from "./BackIcon.svelte";
   import { settingsTabs } from "./settingsTabs";
   import GearIcon from "./GearIcon.svelte";
@@ -66,13 +67,10 @@
   $effect(() => { if (store.me) { refreshCollections(); refreshCounts(); refreshUnread(); } });
   // Builds finish and jobs fail while nobody is looking: check for new notifications now and then.
   $effect(() => { if (!store.me) return; const t = setInterval(refreshUnread, 60_000); return () => clearInterval(t); });
-  // First run: an owner with no social sign-in yet is taken to set one up, and reminded until they do.
+  // Whether social sign-in is set up: until it is, the Sign-in section of Settings carries a red dot.
   $effect(() => {
     if (store.me?.role !== "owner") return;
-    api.authInfo().then((i) => {
-      store.signIn = i.providers.length;
-      if (!i.providers.length && (location.hash === "" || location.hash === "#/")) location.hash = "#/settings/signin";
-    }, () => {});
+    api.authInfo().then((i) => (store.signIn = i.providers.length), () => {});
   });
   async function signOut() { await api.logout(); store.collections = []; store.loaded = false; store.me = null; }
   const [a, b] = $derived(hash.replace(/^#\/?/, "").split("/"));
@@ -97,10 +95,11 @@
   <a href="#/notifications" class="icon-btn quiet tb-bell" class:on={a === "notifications"} aria-label="Notifications{store.unread ? `, ${store.unread} unread` : ""}" title="Notifications"><BellIcon />{#if store.unread}<span class="tb-badge">{store.unread > 9 ? "9+" : store.unread}</span>{/if}</a>
   <ThemeToggle />
   <div class="acct" bind:this={acctEl}>
-    <button type="button" class="icon-btn quiet" aria-label="Account" aria-haspopup="menu" aria-expanded={acctOpen} title={store.me.email} onclick={() => (acctOpen = !acctOpen)}><UserIcon /></button>
+    <button type="button" class="icon-btn quiet" aria-label="Account" aria-haspopup="menu" aria-expanded={acctOpen} title={store.me.name || store.me.email} onclick={() => (acctOpen = !acctOpen)}><Avatar avatar={store.me.avatar} /></button>
     {#if acctOpen}
       <div class="tb-pop" role="menu" onclick={() => (acctOpen = false)} onkeydown={() => {}} tabindex="-1">
-        <div class="who"><strong>{store.me.email}</strong><span class="muted">{owner ? "Owner" : "Member"}</span></div>
+        <div class="who"><strong>{store.me.name || store.me.email}</strong>{#if store.me.name}<span class="muted">{store.me.email}</span>{/if}<span class="muted">{owner ? "Owner" : "Member"}</span></div>
+        <a href="#/settings/profile" class="navrow" role="menuitem"><UserIcon />Profile</a>
         <a href="#/settings" class="navrow" role="menuitem"><GearIcon />Settings</a>
         <button type="button" class="navrow" role="menuitem" onclick={signOut}><LogoutIcon />Sign out</button>
       </div>
@@ -137,9 +136,6 @@
     </div>
   </nav>
   <main class:wide={(!!col && !b) || a === "blocks" || a === "templates"}>
-    {#if store.me?.role === "owner" && store.signIn === 0 && !a}
-      <p class="notice">Finish setting up: <a href="#/settings/signin">add a way to sign in with GitHub or Google</a>.</p>
-    {/if}
     {#if !store.loaded}
       <div class="stack" aria-busy="true" aria-label="Loading"><div class="skel" style="height:40px"></div><div class="skel" style="height:180px"></div></div>
 <Toasts />

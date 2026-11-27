@@ -14,7 +14,7 @@ import { clearProvider, loadProviders, providerStatus, saveProvider } from "./se
 // People sign in with email + password or a social account. The browser gets a session cookie; MCP clients and other apps
 // get OAuth 2.1 tokens (authorization code + PKCE, dynamic client registration) that the same middleware accepts.
 // Every token belongs to a user, so removing a user cuts off everything they signed in or connected.
-export type AuthEnv = { Bindings: { DB: D1Database; SETUP_TOKEN?: string; SETTINGS_KEY?: string } & ProviderEnv; Variables: { user: { id: string; email: string; role: "owner" | "member"; app?: boolean; via?: string } } };
+export type AuthEnv = { Bindings: { DB: D1Database; SETUP_TOKEN?: string; SETTINGS_KEY?: string } & ProviderEnv; Variables: { user: { id: string; email: string; role: "owner" | "member"; name?: string | null; avatar?: string | null; app?: boolean; via?: string } } };
 type Kind = "session" | "code" | "access" | "refresh" | "invite" | "state";
 
 const MIN = 60_000;
@@ -64,7 +64,7 @@ async function take(env: AuthEnv["Bindings"], kind: Kind, secret: string) {
 async function userOf(env: AuthEnv["Bindings"], id: string | null | undefined) {
   if (!id) return undefined;
   const [u] = await db(env).select().from(users).where(eq(users.id, id));
-  return u && { id: u.id, email: u.email, role: u.role };
+  return u && { id: u.id, email: u.email, role: u.role, name: u.name, avatar: u.avatar };
 }
 
 const secure = (c: { req: { url: string } }) => new URL(c.req.url).protocol === "https:";
@@ -375,7 +375,7 @@ accountRoutes.delete("/connections/:id", async (c) => {
 const inviteLink = async (c: { env: AuthEnv["Bindings"]; req: { url: string } }, userId: string) => `${new URL(c.req.url).origin}/invite/${await issue(c.env, "invite", { userId })}`;
 
 accountRoutes.get("/people", ownerOnly, async (c) =>
-  c.json((await db(c.env).select().from(users).orderBy(users.createdAt)).map((u) => ({ id: u.id, email: u.email, role: u.role, hasPassword: !!u.passwordHash }))));
+  c.json((await db(c.env).select().from(users).orderBy(users.createdAt)).map((u) => ({ id: u.id, email: u.email, role: u.role, name: u.name, avatar: u.avatar, hasPassword: !!u.passwordHash }))));
 
 accountRoutes.post("/people", ownerOnly, async (c) => {
   const input = z.object({ email: z.email().transform((e) => e.toLowerCase()) }).safeParse(await c.req.json().catch(() => ({})));

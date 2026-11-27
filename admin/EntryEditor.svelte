@@ -11,6 +11,7 @@
   import { toast } from "./toast.svelte";
   import { saveShortcut } from "./keys";
   import FieldInput from "./FieldInput.svelte";
+  import { entryStats } from "../src/stats";
   import GearIcon from "./GearIcon.svelte";
   import PreviewDialog from "./PreviewDialog.svelte";
   import LiveIcon from "./LiveIcon.svelte";
@@ -286,6 +287,7 @@
       {#if publishedAt}<small class="muted">First published {new Date(publishedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}{revisedAt && revisedAt !== publishedAt ? `, last revised ${new Date(revisedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}` : ""}.</small>{/if}
     {/if}
     {#each c.fields as f (f.key)}{#key f.type === "richtext" ? rev : 0}<FieldInput field={f} {collection} bind:value={data[f.key]} />{/key}{/each}
+    {#if c.stats}{@const st = entryStats(c.fields, data, c.bodyField)}<p class="muted stats">{st.wordCount.toLocaleString()} {st.wordCount === 1 ? "word" : "words"}{st.readingTime ? ` · ${st.readingTime} min read` : ""}</p>{/if}
     <div class="actions">
       <button type="submit" class={id && !later && (!published || pending || dirty) ? "ghost" : ""} disabled={saving}>{later ? "Save and schedule" : "Save draft"}</button>
       {#if id && !later && (!published || pending || dirty)}<button type="button" onclick={publish} disabled={saving}>{published ? "Publish changes" : "Publish"}</button>{/if}

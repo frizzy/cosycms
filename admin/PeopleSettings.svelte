@@ -32,7 +32,7 @@
     <p class="muted">They can also just sign in with a provider from <a href="#/settings/signin">Sign-in</a> using this email.</p>{/if}
   {#each people as p (p.id)}
     <div class="inline">
-      <span style="flex:1"><strong>{p.email}</strong> <small class="muted">{p.role}{p.hasPassword ? "" : " · invited, no password yet"}</small></span>
+      <span style="flex:1"><strong>{p.name || p.email}</strong> <small class="muted">{p.name ? `${p.email} · ` : ""}{p.role}{p.hasPassword ? "" : " · invited, no password yet"}</small></span>
       <button type="button" class="ghost" onclick={() => reinvite(p)}>New password link</button>
       {#if p.id !== store.me?.id}
         <button type="button" class="ghost" onclick={() => setRole(p, p.role === "owner" ? "member" : "owner")}>{p.role === "owner" ? "Make member" : "Make owner"}</button>

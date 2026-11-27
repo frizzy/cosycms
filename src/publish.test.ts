@@ -547,3 +547,14 @@ test("githubCheck: names the missing permission, and stops when the repo itself 
   assert.match(none[0].detail, /Can't see o\/r/);
   assert.match((await run({ repo: 401 }))[0].detail, /doesn't accept this token/);
 });
+
+test("a collection with stats publishes wordCount and readingTime, in JSON and as frontmatter", () => {
+  const fields = [{ key: "title", label: "Title", type: "text" }, { key: "body", label: "Body", type: "richtext" }] as unknown as Field[];
+  const body = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "one two three" }] }] };
+  const json = JSON.parse(render({ id: "p", collection: "posts", slug: "a", data: { title: "T", body } }, { collections: new Map([["posts", { fields, stats: true }]]), entries: new Map() }).content);
+  assert.deepEqual([json.wordCount, json.readingTime], [3, 1]);
+  const md = render({ id: "p", collection: "posts", slug: "a", data: { title: "T", body } }, { collections: new Map([["posts", { fields, format: "markdown", bodyField: "body", stats: true }]]), entries: new Map() }).content;
+  assert.match(md, /wordCount: 3\nreadingTime: 1\n/);
+  assert.equal("wordCount" in JSON.parse(render({ id: "p", collection: "posts", slug: "a", data: { title: "T", body } }, { collections: new Map([["posts", { fields }]]), entries: new Map() }).content), false, "off by default");
+  assert.equal(CollectionCreate.safeParse({ key: "x", label: "X", stats: true, fields: [{ key: "wordCount", label: "W", type: "number" }] }).success, false, "a field can't shadow the stat keys");
+});

@@ -176,6 +176,13 @@
       "when": 1795785876631,
       "tag": "0025_entry_unpublish_at",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1795798140091,
+      "tag": "0026_profile_and_stats",
+      "breakpoints": true
     }
   ]
 }

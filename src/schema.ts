@@ -50,6 +50,7 @@ export const collections = sqliteTable("collections", {
   bodyField: text(), // markdown: the rich text field written as the file body
   single: integer({ mode: "boolean" }).notNull().default(false), // holds exactly one entry (a home page, site settings): the list opens it directly and a second can't be added
   dates: integer({ mode: "boolean" }).notNull().default(false), // entries have publish dates: a go-live time they can be scheduled with, and publishedAt / revisedAt written into the published file
+  stats: integer({ mode: "boolean" }).notNull().default(false), // the published file carries wordCount and readingTime (see src/stats.ts)
   fields: text({ mode: "json" }).$type<Field[]>().notNull(),
   updatedAt: integer({ mode: "timestamp_ms" }).notNull(),
 });
@@ -78,6 +79,8 @@ export const users = sqliteTable("users", {
   email: text().notNull().unique(), // lowercased
   role: text({ enum: ["owner", "member"] }).notNull(),
   passwordHash: text(),
+  name: text(), // what they like to be called; shown instead of the email where there is room
+  avatar: text(), // a preset id (see src/avatars.ts) or the storage key of an uploaded image
   createdAt: integer({ mode: "timestamp_ms" }).notNull(),
 });
 

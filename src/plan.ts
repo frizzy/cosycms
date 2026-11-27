@@ -4,6 +4,7 @@ import type { FileValue } from "./images.ts";
 import { docImageIds, docLinkIds, resolveDoc, resolveLinks, toMarkdown, type ImageResolver } from "./markdown.ts";
 import type { BlockDef } from "./blocks.ts";
 import type { Change } from "./targets.ts";
+import { STAT_KEYS, entryStats } from "./stats.ts";
 
 export type PublishedEntry = { id: string; collection: string; slug: string; data: Record<string, unknown> };
 export type State = { entryId: string; path: string; hash: string };
@@ -13,7 +14,7 @@ export const sha256 = async (d: string | BufferSource) =>
   hex(await crypto.subtle.digest("SHA-256", typeof d === "string" ? new TextEncoder().encode(d) : d));
 
 // What rendering needs to know: every collection's definition, and every entry (to resolve references to paths and slugs).
-export type CollectionInfo = { fields: Field[]; format?: string | null; bodyField?: string | null; folder?: string | null; urlTemplate?: string | null; dates?: boolean };
+export type CollectionInfo = { fields: Field[]; format?: string | null; bodyField?: string | null; folder?: string | null; urlTemplate?: string | null; dates?: boolean; stats?: boolean };
 export type RenderCtx = { collections: Map<string, CollectionInfo>; entries: Map<string, Omit<PublishedEntry, "id">>; blocks?: Map<string, BlockDef> };
 
 // ---- paths -----------------------------------------------------------------------------------------------------------
@@ -60,6 +61,7 @@ function media(id: string, fromPath: string, ctx: RenderCtx) {
 const imageTag = (f?: Field) => (f?.type === "richtext" ? f.imageComponent : undefined);
 
 // The two dates a collection with publish dates adds to what it publishes.
+const STAT_FIELDS = STAT_KEYS.map((key) => ({ key, label: key, type: "number" as const })) as unknown as Field[];
 const DATE_FIELDS = (["publishedAt", "revisedAt"] as const).map((key) => ({ key, label: key, type: "datetime" as const })) as unknown as Field[];
 
 export function render(e: PublishedEntry, ctx?: RenderCtx) {
@@ -73,8 +75,9 @@ export function render(e: PublishedEntry, ctx?: RenderCtx) {
   const blocks = ctx?.blocks;
   // A link to another entry becomes that entry's page address (its collection's urlTemplate with the slug filled in).
   const href = (id: string) => { const t = ctx?.entries.get(id), tc = t && ctx!.collections.get(t.collection); return t && tc?.urlTemplate ? tc.urlTemplate.replace("{slug}", t.slug) : undefined; };
-  let data = e.data;
-  const fields = col?.dates ? [...col.fields, ...DATE_FIELDS] : col?.fields ?? [];
+  // Counted from the entry as written, before links and images are turned into paths.
+  let data = col?.stats ? { ...e.data, ...entryStats(col.fields, e.data, col.bodyField) } : e.data;
+  const fields = [...(col?.fields ?? []), ...(col?.dates ? DATE_FIELDS : []), ...(col?.stats ? STAT_FIELDS : [])];
   for (const f of fields) {
     const v = data[f.key];
     if (v == null) continue;

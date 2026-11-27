@@ -85,10 +85,12 @@ const baseDef = z.object({
   bodyField: z.string().nullish(), // markdown only: the rich text field that becomes the file's body
   single: z.boolean().optional(), // one entry only
   dates: z.boolean().optional(), // entries have publish dates: a go-live time, and publishedAt / revisedAt in the published file
+  stats: z.boolean().optional(), // the published file carries wordCount and readingTime
   fields: fieldsSchema,
 });
 
-const checkSlugSource = (v: { slugSource?: string | null; titleField?: string | null; thumbField?: string | null; bodyField?: string | null; format?: string | null; folder?: string | null; fields: Field[] }, ctx: z.RefinementCtx) => {
+const checkSlugSource = (v: { slugSource?: string | null; titleField?: string | null; thumbField?: string | null; bodyField?: string | null; format?: string | null; folder?: string | null; stats?: boolean; fields: Field[] }, ctx: z.RefinementCtx) => {
+  if (v.stats && v.fields.some((f) => f.key === "wordCount" || f.key === "readingTime")) ctx.addIssue({ code: "custom", message: "wordCount and readingTime are written by the word count setting; rename your field or turn the setting off", path: ["stats"] });
   if (v.folder && folderError(v.folder, false)) ctx.addIssue({ code: "custom", message: folderError(v.folder, false)!, path: ["folder"] });
   if (v.bodyField && (!(v.format === "markdown" || v.format === "mdx") || !v.fields.some((f) => f.key === v.bodyField && f.type === "richtext")))
     ctx.addIssue({ code: "custom", message: `body field "${v.bodyField}" must be a rich text field, and only applies to Markdown or MDX`, path: ["bodyField"] });
@@ -100,13 +102,13 @@ const checkSlugSource = (v: { slugSource?: string | null; titleField?: string | 
     ctx.addIssue({ code: "custom", message: `title field "${v.titleField}" must be a single-line text field`, path: ["titleField"] });
 };
 
-const RESERVED = ["settings", "collections", "new"]; // admin routes
+const RESERVED = ["settings", "collections", "new", "schedule", "activity", "trash", "blocks", "templates", "notifications"]; // admin routes
 export const CollectionDef = baseDef.superRefine(checkSlugSource);
 export const CollectionCreate = baseDef.extend({
   key: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "lowercase letters, numbers and dashes")
     .refine((k) => !RESERVED.includes(k), "reserved name"),
 }).superRefine(checkSlugSource);
-export type Collection = { key: string; label: string; urlTemplate?: string | null; slugSource?: string | null; titleField?: string | null; thumbField?: string | null; dates?: boolean; format?: "json" | "markdown" | "mdx" | null; folder?: string | null; bodyField?: string | null; single?: boolean; fields: Field[] };
+export type Collection = { stats?: boolean; key: string; label: string; urlTemplate?: string | null; slugSource?: string | null; titleField?: string | null; thumbField?: string | null; dates?: boolean; format?: "json" | "markdown" | "mdx" | null; folder?: string | null; bodyField?: string | null; single?: boolean; fields: Field[] };
 
 /** Keys of existing fields whose type, single/multi shape or reference target changed; stored data would no longer fit. */
 const shape = (f: Field) =>
