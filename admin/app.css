@@ -354,3 +354,13 @@ table.list th.c-pick, table.list td.c-pick { width:2.4rem; padding-right:0; text
 @media (hover:none) { .gwrap .pick { opacity:1; } }
 .bulkbar { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; margin-bottom:1rem; padding:.55rem .8rem; border:1px solid var(--line-strong); border-radius:8px; background:var(--accent-soft); } .bulkbar .spacer { flex:1; }
 .bulkfail { margin-bottom:1rem; } .bulkfail ul { margin:.3rem 0 .6rem; padding-left:1.1rem; } .bulkfail p { margin:0; }
+/* Long lists: the search bar and bulk bar stay in view, and the column heads sit under them */
+.listhead { position:sticky; top:var(--navh, 0px); z-index:6; background:var(--bg); padding:.5rem 0 .1rem; margin-top:-.5rem; }
+table.list thead th { position:sticky; top:var(--stick, 0px); z-index:5; background:var(--bg); }
+.count .more { padding:.05rem .6rem; font-size:.85rem; }
+.scrub { position:fixed; right:3px; bottom:.75rem; width:12px; border-radius:6px; background:var(--line); cursor:pointer; touch-action:none; z-index:20; }
+.scrub-loaded { position:absolute; left:0; right:0; top:0; border-radius:6px; background:var(--line-strong); }
+.scrub-handle { position:absolute; left:0; right:0; min-height:6px; border-radius:6px; background:var(--accent); opacity:.75; pointer-events:none; }
+.scrub:hover .scrub-handle { opacity:1; }
+.scrub-bubble { position:absolute; right:18px; transform:translateY(-50%); white-space:nowrap; padding:.2rem .55rem; border-radius:6px; background:var(--ink); color:var(--bg); font-size:.8rem; pointer-events:none; }
+@media (max-width:600px) { .scrub { display:none; } }
