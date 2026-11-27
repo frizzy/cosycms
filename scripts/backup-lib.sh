@@ -30,10 +30,16 @@ load_destination() {
   TOKEN=$(sed -n 's/^TICK_TOKEN=//p' "$APP/.dev.vars" 2>/dev/null || true)
   COSY_DEST=none; COSY_TEST=0
   if [ -n "$TOKEN" ]; then
-    JOB=$(curl -fsSk -m 20 -H "Authorization: Bearer $TOKEN" "$URL/api/backup/job") || JOB=""
+    JOB=$(curl -fsSk -m 20 -H "Authorization: Bearer $TOKEN" "$URL/api/backup/job" 2>/dev/null) || JOB=""
     [ -z "$JOB" ] || eval "$JOB" # the app quotes every value
   fi
-  [ "$COSY_DEST" != none ] && return 0
+  # Remembered for restore.sh, which has to work when the app is down. Not in the backup itself: the copies can't be opened without it.
+  CACHE="$APP/.backup.cache"
+  if [ "$COSY_DEST" != none ]; then
+    ( umask 077; printf '%s\n' "$JOB" | grep -v '^COSY_TEST=' > "$CACHE.tmp" && mv "$CACHE.tmp" "$CACHE" ) || true
+    return 0
+  fi
+  if [ -z "${JOB:-}" ] && [ -f "$CACHE" ]; then set -a; . "$CACHE"; set +a; [ "$COSY_DEST" != none ] && return 0; fi
   if [ -f "$APP/.backup.env" ]; then set -a; . "$APP/.backup.env"; set +a; COSY_DEST=file; fi
   return 0
 }
