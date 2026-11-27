@@ -533,10 +533,27 @@ app.post("/collections/:key/unused", ownerOnly, async (c) => {
   return c.json({ items: await withThumbs(c, col, unused.slice(0, 200)), total: unused.length, scanned: all.length });
 });
 
-// For the editor's "Used in" list. shortcut: up to 50 per kind of use; a heavily used image shows the first ones.
+/** Entries that point at this one, with their display title (title field, else slug), split by how: `used` (a reference field, an image, a block) and `linked` (a hyperlink in text, written "cosy:entry/<id>"). One entry can be both. */
+async function pointingAt(c: { env: Env["Bindings"] }, id: string) {
+  const rows = await usedBy(c, { id }, 50);
+  if (!rows.length) return { items: [], links: [] };
+  const full = new Map((await db(c).select().from(entries).where(inArray(entries.id, rows.map((r) => r.id)))).map((e) => [e.id, e]));
+  const cols = new Map((await db(c).select().from(collections)).map((k) => [k.key, k]));
+  const items: (Use & { title: string })[] = [], links: (Use & { title: string })[] = [];
+  for (const r of rows) {
+    const e = full.get(r.id), col = cols.get(r.collection);
+    const row = { ...r, title: e && col ? entryLabel(col.fields, e.data, e.slug, col.titleField) : r.slug };
+    const json = e ? JSON.stringify([e.data, e.live?.data]) : "", link = `cosy:entry/${id}`;
+    if (json.includes(link)) links.push(row);
+    if (!e || json.replaceAll(link, "").includes(id)) items.push(row);
+  }
+  return { items, links };
+}
+
+// For the editor: "Used in" (referenced by a field, image or block) and "Linked to" (hyperlinked from text). shortcut: up to 50 sources in all; a heavily used image shows the first ones.
 app.get("/entries/:id/usage", async (c) => {
   const [row] = await db(c).select().from(entries).where(eq(entries.id, c.req.param("id")));
-  return row ? c.json({ items: await usedBy(c, row, 50) }) : c.json({ error: "not found" }, 404);
+  return row ? c.json(await pointingAt(c, row.id)) : c.json({ error: "not found" }, 404);
 });
 
 /** Deletes an entry unless something still points at it; a message says why not. The copy in the history is what the trash restores. */

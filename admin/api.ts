@@ -40,6 +40,7 @@ export type Provider = { id: string; name: string; help: string; clientId: strin
 export type Hit = Entry & { match: { title: string; snippet: string | null } }; // title and snippet have the matched words between \u0001 and \u0002
 export type Notice = { id: string; at: string; kind: string; level: "error" | "success" | "info"; title: string; body: string | null; link: string | null; readAt: string | null };
 export type Activity = { id: string; at: string; actor: string; via: string | null; action: string; collection: string | null; entryId: string | null; label: string | null; detail: string | null; undoable: number };
+export type Used = { id: string; collection: string; slug: string; title: string };
 export type Trashed = { id: string; at: string; actor: string; collection: string; label: string; entryId: string };
 export type Counts = Record<string, { drafts: number; edited: number }>;
 export type Connection = { id: string; name: string; lastActive: number };
@@ -91,7 +92,7 @@ export const api = {
     call<{ items: Entry[]; total: number }>(`/entries/search?${new URLSearchParams({ collection, q: o.q, sort: o.sort, dir: o.dir, limit: String(o.limit), offset: String(o.offset), filter: o.filter ?? "" })}`),
   list: (collection?: string) => call<Entry[]>("/entries" + (collection ? `?collection=${encodeURIComponent(collection)}` : "")),
   unused: (collection: string) => call<{ items: Entry[]; total: number; scanned: number }>(`/collections/${collection}/unused`, { method: "POST" }),
-  usage: (id: string) => call<{ items: { id: string; collection: string; slug: string }[] }>(`/entries/${id}/usage`),
+  usage: (id: string) => call<{ items: Used[]; links: Used[] }>(`/entries/${id}/usage`),
   get: (id: string) => call<Entry>(`/entries/${id}?live=1`),
   create: (e: EntryInput) => call<Entry>("/entries", { method: "POST", body: JSON.stringify(e) }),
   update: (id: string, e: EntryInput) => call<Entry>(`/entries/${id}`, { method: "PUT", body: JSON.stringify(e) }),

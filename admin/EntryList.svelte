@@ -169,7 +169,7 @@
   {#if !(col.single && total)}<a class="icon-btn" href="#/{collection}/new" aria-label="New entry" title="New entry"><PlusIcon /></a>{/if}
 </header>
 
-<div class="listhead" bind:this={headEl}>
+<div class="listhead" style="top:{navH}px" bind:this={headEl}>
 <div class="listbar">
   <input type="search" class="search" placeholder="Search {col.label.toLowerCase()}" aria-label="Search entries" bind:value={q} />
   <select aria-label="Filter" value={filter} onchange={(e) => setFilter(e.currentTarget.value)}>{#each filters as f (f.value)}<option value={f.value}>{f.text}</option>{/each}</select>

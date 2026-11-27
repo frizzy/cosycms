@@ -9,7 +9,7 @@
   --danger:light-dark(#bd3434, #ff7b7b); --danger-soft:light-dark(#f8e3e3, #3b2528);
   --ok:light-dark(#2c7a3d, #bcf2a2); --warn:light-dark(#7f5800, #ffd688); --warn-soft:light-dark(#f6ecd0, #3a3320);
   --select:light-dark(#bfe3ee, #2f5c6b); --glow:light-dark(transparent, rgb(46 173 215 / .4));
-  --radius:7px; --sans:ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --radius:7px; --mono:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; --sans:ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 :root[data-theme=light] { color-scheme:light; }
 :root[data-theme=dark] { color-scheme:dark; }
@@ -139,7 +139,7 @@ td a { font-weight:600; }
   nav .publish { margin:0; }
   nav .burger { display:inline-flex; margin-left:.15rem; }
   nav .menu { display:none; flex:none; padding-top:.6rem; }
-  nav .menu.open { display:flex; }
+  nav .menu.open { display:flex; align-items:stretch; }
   nav .settings { margin-top:.5rem; border-top:1px solid var(--line); padding-top:.6rem; border-radius:0 0 var(--radius) var(--radius); }
   main { padding:1.25rem 1rem 0; min-height:0; } .actions { margin-left:-1rem; margin-right:-1rem; padding:.75rem 1rem; }
   .cols { grid-template-columns:1fr; } .toasts { bottom:4.5rem; }
@@ -235,7 +235,7 @@ td.c-status span { display:inline-flex; align-items:center; gap:.35rem; color:va
 td.c-status, td.c-updated { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .pager { position:static; height:auto; display:flex; align-items:center; gap:.5rem; margin:1rem 0 2rem; padding:0; background:none; border:0; flex-direction:row; overflow:visible; }
 .count { margin:.8rem .6rem 2rem; }
-@media (max-width:600px) { table.list th.c-updated, table.list td.c-updated { display:none; } table.list th.c-status { width:5.5rem; } }
+@media (max-width:600px) { table.list th.c-updated, table.list td.c-updated { display:none; } table.list th.c-status { width:6.5rem; } main.wide { padding-left:.5rem; padding-right:.5rem; } table.list th, table.list td { padding-left:.4rem; padding-right:.4rem; } table.list th.c-pick, table.list td.c-pick { width:2rem; } }
 .check.keep { align-self:end; padding-bottom:.55rem; }
 header > a { white-space:nowrap; flex:none; } /* a long title shrinks; the Back link never wraps */
 
@@ -362,3 +362,43 @@ table.list thead th { position:sticky; top:var(--stick, 0px); z-index:5; backgro
 .gauge { position:relative; height:2px; margin-top:.5rem; background:var(--line); }
 .gauge-loaded { position:absolute; left:0; top:0; bottom:0; background:color-mix(in srgb, var(--accent) 30%, var(--bg)); }
 .gauge-view { position:absolute; top:0; bottom:0; min-width:6px; background:var(--accent); }
+
+/* --edge: a soft outline; --block: the offset shadow, a tint of the accent so it differs from the outline. */
+:root { --edge:color-mix(in srgb, var(--ink) 40%, var(--bg)); --block:color-mix(in srgb, var(--accent) 35%, var(--bg)); }
+/* Retro controls (a per-browser choice in Settings > Appearance): flat blocks, hard edges, a hard offset shadow, mono labels. */
+:root[data-style=retro] {
+  input[type=checkbox], .pick:is(input) { appearance:none; flex:none; width:1.05rem; height:1.05rem; margin:0; border:1px solid var(--edge); border-radius:0; background:var(--surface); display:inline-grid; place-content:center; cursor:pointer; box-shadow:none; }
+  input[type=checkbox]::after { content:""; width:.5rem; height:.5rem; background:var(--accent); transform:scale(0); }
+  input[type=checkbox]:checked { border-color:var(--accent); }
+  input[type=checkbox]:checked::after { transform:scale(1); }
+  input[type=checkbox]:disabled { opacity:.5; cursor:not-allowed; }
+  input[type=checkbox]:focus-visible { outline:2px solid var(--accent); outline-offset:2px; box-shadow:none; }
+  .bulkbar { border:1px solid var(--edge); border-radius:0; box-shadow:3px 3px 0 var(--block); font-family:var(--mono); font-size:.85rem; } .bulkbar button { border-radius:0; font-family:var(--mono); }
+  .dt-trigger { border:1px solid var(--edge); border-radius:0; } .dt-trigger[aria-expanded=true] { border-color:var(--accent); }
+  .dt-pop { border:1px solid var(--edge); border-radius:0; box-shadow:4px 4px 0 var(--block); font-family:var(--mono); } .dt-pop button, .dt-pop input { border-radius:0; font-family:var(--mono); }
+  .dt-head strong { font-weight:700; } .dt-dow { font-size:.7rem; }
+  .dt-grid { gap:0; } .dt-day { border-radius:0; border:1px solid transparent; font-family:var(--mono); } .dt-day:hover { border-color:var(--edge); background:transparent; }
+  .dt-day.now { outline:0; border-color:var(--control); } .dt-day.sel { border-color:var(--accent); }
+}
+.dt-pop { box-sizing:border-box; } .dt-grid { grid-template-columns:repeat(7, minmax(0, 1fr)); } .dt-foot { flex-wrap:wrap; } .dt-foot input { min-width:0; }
+@media (max-width:600px) { .listbar .search { flex:1 1 100%; } } /* its own row, instead of squeezed to nothing beside the filter */
+@media (max-width:600px) { .bulkbar { gap:.35rem; padding:.4rem .5rem; margin-bottom:.5rem; font-size:.8rem; } .bulkbar button { padding:.35rem .6rem; font-size:.8rem; } .listbar { margin-bottom:.6rem; } }
+/* Retro, everywhere else: square corners, a soft hard-edge outline, offset shadows on what floats, mono on buttons and tabs. */
+:root[data-style=retro] {
+  --radius:0;
+  input, select, textarea, .dt-trigger, .tags, .editor .ProseMirror { border-color:var(--edge); }
+  button, .button, .tabs a, nav .badge, .chip, .warn, .chg .chip { font-family:var(--mono); }
+  button, .button, .tabs a, nav a, nav .navrow, .icon-btn, .seg button, .chip, .warn, .chg .chip, nav .badge, .thumb, .tile img, .noimg, .tile .open, .tile .x, .pick, .pick img, .gtile img, .gtile img, .fieldrow, .file, .file img, .notice, .notices li, .notices .mark, .hits a, dialog, dialog.palette li, .menu-pop, .toast, .editor .ProseMirror, .editor .block, .editor .ProseMirror img, .editor .ProseMirror pre:not(.raw), .editor .raw, .dot, .dirty::before, mark { border-radius:0; }
+  nav .navrow, nav .find { font-family:var(--sans); } /* the sidebar rows are buttons and links alike; keep them one face */
+  dialog, .menu-pop, .toast, dialog.palette { border-color:var(--edge); box-shadow:5px 5px 0 var(--block); }
+  .tabs a.active, nav a.active { box-shadow:inset 0 -2px 0 var(--accent); }
+  input:focus-visible, select:focus-visible, textarea:focus-visible, .tags:focus-within, .editor .ProseMirror:focus { border-color:var(--accent); box-shadow:2px 2px 0 var(--block); }
+}
+.navhead { display:flex; align-items:center; justify-content:space-between; margin:.7rem .6rem .15rem; color:var(--muted); font-size:.85rem; font-weight:600; } nav .navhead .icon-btn { margin:0; }
+:root[data-style=retro] {
+  .icon-btn { width:2rem; height:2rem; border:1px solid var(--edge); } .icon-btn:hover { border-color:var(--accent); background:transparent; box-shadow:2px 2px 0 var(--block); }
+  .icon-btn.burger, .icon-btn.theme { border-color:transparent; box-shadow:none; }
+  .icon-btn .ring { display:none; } .icon-btn svg path { stroke-linecap:square; }
+  .navhead { font-family:var(--mono); font-weight:700; } .titlebar .icon-btn { margin-left:.5rem; }
+}
+table.list th.c-updated, table.list td.c-updated { text-align:right; }

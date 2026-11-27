@@ -8,6 +8,7 @@
   import SearchSettings from "./SearchSettings.svelte";
   import BackupSettings from "./BackupSettings.svelte";
   import HistorySettings from "./HistorySettings.svelte";
+  import AppearanceSettings from "./AppearanceSettings.svelte";
 
   let { section }: { section?: string } = $props();
   const owner = $derived(store.me?.role === "owner");
@@ -15,6 +16,7 @@
   const tabs = $derived([
     ...(owner ? [{ id: "publishing", label: "Deploy" }, { id: "signin", label: "Sign-in" }, { id: "people", label: "People" }, { id: "notifications", label: "Notifications" }, { id: "history", label: "History" }, { id: "search", label: "Search" }, { id: "backups", label: "Backups" }] : []),
     { id: "apps", label: "Connected apps" },
+    { id: "appearance", label: "Appearance" },
   ]);
   const current = $derived(tabs.find((t) => t.id === section)?.id ?? tabs[0].id);
 </script>
@@ -30,4 +32,5 @@
 {:else if current === "search"}<SearchSettings />
 {:else if current === "history"}<HistorySettings />
 {:else if current === "backups"}<BackupSettings />
+{:else if current === "appearance"}<AppearanceSettings />
 {:else}<AppsSettings />{/if}

@@ -96,11 +96,11 @@
     </div>
     <div class="menu" id="menu" class:open={menuOpen} onclick={(e) => { if ((e.target as Element).closest("a")) menuOpen = false; }} role="presentation">
       <button type="button" class="navrow find" onclick={() => { menuOpen = false; palette.show(); }}><SearchIcon />Search<kbd>{modKey}</kbd></button>
+      <div class="navhead"><span>Collections</span>{#if owner}<a href="#/collections/new" class="icon-btn" aria-label="New collection" title="New collection"><PlusIcon /></a>{/if}</div>
       {#each store.collections as c (c.key)}
         {@const n = (store.counts[c.key]?.drafts ?? 0) + (store.counts[c.key]?.edited ?? 0)}
         <a href="#/{c.key}" class:active={c.key === a}>{c.label}{#if n}<span class="badge" title="{store.counts[c.key].drafts} draft{store.counts[c.key].drafts === 1 ? "" : "s"}, {store.counts[c.key].edited} edited">{n}</span>{/if}</a>
       {/each}
-      {#if owner}<a href="#/collections/new" class="icon-btn" aria-label="New collection" title="New collection"><PlusIcon /></a>{/if}
       <a href="#/notifications" class="navrow settings" class:active={a === "notifications"}><BellIcon />Notifications{#if store.unread}<span class="badge" title="{store.unread} unread">{store.unread}</span>{/if}</a>
       <a href="#/activity" class="navrow" class:active={a === "activity"}><ActivityIcon />Activity</a>
       <a href="#/trash" class="navrow" class:active={a === "trash"}><TrashIcon />Trash</a>

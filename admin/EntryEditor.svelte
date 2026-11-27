@@ -1,7 +1,7 @@
 <script lang="ts">
   import { ask } from "./confirm.svelte";
   import { tick } from "svelte";
-  import { api, type Entry } from "./api";
+  import { api, type Entry, type Used } from "./api";
   import ClockIcon from "./ClockIcon.svelte";
   import ChangeDialog, { type ChangeView } from "./ChangeDialog.svelte";
   import { fieldChanges, type Change } from "../src/diff";
@@ -99,8 +99,8 @@
   });
 
   // Where this entry is used (an image in a post, a link from another entry): shown below the form when there is anything.
-  let usage = $state<{ id: string; collection: string; slug: string }[]>([]);
-  $effect(() => { if (id) api.usage(id).then((r) => (usage = r.items), () => {}); });
+  let usage = $state<Used[]>([]), links = $state<Used[]>([]);
+  $effect(() => { if (id) api.usage(id).then((r) => { usage = r.items; links = r.links; }, () => {}); });
   const collLabel = (key: string) => store.collections.find((x) => x.key === key)?.label ?? key;
 
   // Saving only ever changes the draft. Returns the entry's id when it saved.
@@ -227,16 +227,18 @@
       <span class="status">{#if error}<span class="error">{error}</span>{:else if dirty}<span class="dirty">Unsaved changes</span>{/if}</span>
     </div>
   </form>
-  {#if usage.length}
+  {#snippet refs(title: string, noun: string, list: Used[])}
     <section class="usage">
-      <h2>Used in {usage.length}{usage.length === 50 ? "+" : ""} {usage.length === 1 ? "place" : "places"}</h2>
-      <ul>{#each usage as u (u.id)}<li><a href="#/{u.collection}/{u.id}">{u.slug}</a> <span class="muted">{collLabel(u.collection)}</span></li>{/each}</ul>
+      <h2>{title} {list.length}{list.length === 50 ? "+" : ""} {list.length === 1 ? noun : noun === "place" ? "places" : "entries"}</h2>
+      <ul>{#each list as u (u.id)}<li><a href="#/{u.collection}/{u.id}">{u.title}</a> <span class="muted">{collLabel(u.collection)}</span></li>{/each}</ul>
     </section>
-  {/if}
+  {/snippet}
+  {#if usage.length}{@render refs("Used in", "place", usage)}{/if}
+  {#if links.length}{@render refs("Linked from", "entry", links)}{/if}
 {/if}
 
 <style>
-  .usage { margin-top: 2rem; }
+  .usage { margin-top: 2rem; } .usage:last-of-type { margin-bottom: 3rem; }
   .usage h2 { font-size: 1rem; margin: 0 0 .5rem; }
   .usage ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; max-height: 14rem; overflow: auto; }
   .usage li { overflow-wrap: anywhere; }
