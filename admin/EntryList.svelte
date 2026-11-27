@@ -130,7 +130,7 @@
 
   // The scroll bar: the whole list as a track, what is loaded shaded, and the part on screen as the handle. Drag or click to jump.
   let listEl = $state<HTMLElement>(), track = $state<HTMLElement>(), navH = $state(0), headH = $state(0), headEl = $state<HTMLElement>();
-  let sbw = $state(0), vis = $state({ top: 0, size: 1 }), bubble = $state<{ y: number; text: string } | null>(null), dragging = false;
+  let sbw = $state(0), vis = $state({ top: 0, size: 1 }), bubble = $state<{ y: number; text: string } | null>(null), dragging = $state(false), dwell: ReturnType<typeof setTimeout>;
   const stick = $derived(navH + headH);
   $effect(() => {
     const nav = document.querySelector("nav"), mq = matchMedia("(max-width:760px)");
@@ -150,6 +150,7 @@
   }
   $effect(() => { rows?.length; total; stick; listEl; tick().then(measure); });
   const showTrack = $derived(!unused && total > BATCH);
+  $effect(() => { if (!showTrack) return; document.documentElement.classList.add("own-scroll"); return () => document.documentElement.classList.remove("own-scroll"); });
   const hint = (i: number) => {
     const e = rows?.[Math.min(i, (rows?.length ?? 1) - 1)];
     if (!e || i >= (rows?.length ?? 0)) return "";
@@ -157,7 +158,10 @@
   };
   function point(e: PointerEvent) {
     const r = track!.getBoundingClientRect(), f = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)), i = Math.round(f * total);
-    bubble = { y: e.clientY - r.top, text: `${Math.min(total, i + 1)} of ${total}${hint(i) ? ` · ${hint(i)}` : ""}` };
+    const b = { y: e.clientY - r.top, text: `${Math.min(total, i + 1)} of ${total}${hint(i) ? ` · ${hint(i)}` : ""}` };
+    clearTimeout(dwell);
+    if (dragging) bubble = b; // while dragging it follows at once; when only hovering it appears once the pointer rests
+    else { bubble = null; dwell = setTimeout(() => (bubble = b), 600); }
     return f;
   }
   async function jump(f: number) {
@@ -275,10 +279,10 @@
 
 <svelte:window onscroll={measure} onresize={measure} />
 {#if showTrack}
-  <div class="scrub" role="presentation" bind:this={track} style="top:{stick + 8}px;right:{sbw ? sbw + 6 : 20}px"
+  <div class="scrub" class:drag={dragging} role="presentation" bind:this={track} style="top:{stick + 8}px;right:{sbw ? sbw + 6 : 8}px"
     onpointerdown={(e) => { dragging = true; track?.setPointerCapture(e.pointerId); jump(point(e)); }}
     onpointermove={(e) => { const f = point(e); if (dragging) jump(f); }}
-    onpointerup={() => (dragging = false)} onpointercancel={() => (dragging = false)} onpointerleave={() => { if (!dragging) bubble = null; }}>
+    onpointerup={() => { dragging = false; bubble = null; }} onpointercancel={() => { dragging = false; bubble = null; }} onpointerleave={() => { clearTimeout(dwell); if (!dragging) bubble = null; }}>
     <div class="scrub-loaded" style="height:{(rows ? rows.length / total : 0) * 100}%"></div>
     <div class="scrub-handle" style="top:{vis.top * 100}%;height:{vis.size * 100}%"></div>
     {#if bubble}<div class="scrub-bubble" style="top:{bubble.y}px">{bubble.text}</div>{/if}
