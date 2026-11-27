@@ -255,9 +255,10 @@ app.get("/entries", async (c) => {
 
 // What is scheduled for each entry, so lists and the editor can show it: when it goes live, and whether the attempt failed.
 async function attach<T extends { id: string }>(c: { env: Env["Bindings"] }, items: T[]) {
-  const jobs = items.length ? await db(c).select().from(schedule).where(and(eq(schedule.kind, "entry.publish"), inArray(schedule.ref, items.map((e) => e.id)))) : [];
-  const by = new Map(jobs.filter((j) => j.status !== "done").map((j) => [j.ref, { at: j.runAt.toISOString(), failed: j.status === "failed", error: j.error ?? undefined }]));
-  return items.map((e) => ({ ...e, schedule: by.get(e.id) }));
+  const jobs = items.length ? (await db(c).select().from(schedule).where(and(inArray(schedule.kind, ["entry.publish", "entry.unpublish"]), inArray(schedule.ref, items.map((e) => e.id))))).filter((j) => j.status !== "done") : [];
+  const pick = (kind: string) => new Map(jobs.filter((j) => j.kind === kind).map((j) => [j.ref, { at: j.runAt.toISOString(), failed: j.status === "failed", error: j.error ?? undefined }]));
+  const up = pick("entry.publish"), down = pick("entry.unpublish");
+  return items.map((e) => ({ ...e, schedule: up.get(e.id), takeDown: down.get(e.id) }));
 }
 
 // Search and "where used" indexes (see search.ts): updated after every write, built on first use.
@@ -312,7 +313,7 @@ app.get("/entries/search", async (c) => {
   // filter: draft (never published) | edited (draft differs from published) | attention (either) | empty:<field> (nothing filled in)
   const emptyKey = filter.startsWith("empty:") ? filter.slice(6) : "";
   const filtered = filter === "draft" ? eq(entries.status, "draft") : filter === "edited" ? eq(entries.pending, true) : filter === "attention" ? or(eq(entries.status, "draft"), eq(entries.pending, true))
-    : filter === "scheduled" ? sql`${entries.id} in (select ref from schedule where kind = 'entry.publish' and status != 'done')`
+    : filter === "scheduled" ? sql`${entries.id} in (select ref from schedule where kind in ('entry.publish', 'entry.unpublish') and status != 'done')`
     : emptyKey && col.fields.some((f) => f.key === emptyKey) ? sql`coalesce(trim(cast(${path(emptyKey)} as text)), '') in ('', '[]')` : undefined;
   const where = and(eq(entries.collection, collection), filtered, q.trim()
     ? (fts ? sql`${entries.id} in (select d.entry from search join search_doc d on d.id = search.rowid where search match ${fts} and d.collection = ${collection})` : sql`0`) // only punctuation: nothing to match
@@ -471,6 +472,8 @@ type Ctx = Parameters<typeof log>[0];
 async function unpublishRow(c: Ctx, id: string) {
   const [res] = await db(c).update(entries).set({ live: null, status: "draft", pending: false }).where(eq(entries.id, id)).returning();
   if (!res) return null;
+  // A go-live time that has passed is spent; left in place, the picker would offer that old date and a new time on it would still be in the past.
+  if (res.publishAt && res.publishAt <= new Date()) { await db(c).update(entries).set({ publishAt: null }).where(eq(entries.id, id)); res.publishAt = null; }
   await log(c, { action: "entry.unpublish", collection: res.collection, entryId: res.id, label: await labelOf(c, res) });
   await syncSchedule(c, res); // a draft with a future go-live time is scheduled again
   await indexEntry(c, res);

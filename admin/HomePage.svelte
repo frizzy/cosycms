@@ -20,7 +20,7 @@
     const t = setTimeout(() => api.find(query, 20).then((r) => { if (!stale) { hits = r.items; total = r.total; error = ""; } }, (e) => { if (!stale) error = e.message; }), 200);
     return () => { stale = true; clearTimeout(t); };
   });
-  $effect(() => { if (owner) api.schedule().then((r) => (queued = r.filter((j) => j.kind === "entry.publish")), () => {}); });
+  $effect(() => { if (owner) api.schedule().then((r) => (queued = r.filter((j) => j.kind === "entry.publish" || j.kind === "entry.unpublish")), () => {}); });
   $effect(() => { if (input && matchMedia("(pointer: fine)").matches) input.focus(); }); // not on a phone: the keyboard would cover the page
 
   const title = (e: Entry) => { const c = col(e); return c ? entryLabel(c.fields, e.data, e.slug, c.titleField) : e.slug; };
@@ -38,6 +38,7 @@
       {#if h?.match.snippet}<span class="snip">{#each pieces(h.match.snippet) as p}{#if p.hit}<mark>{p.t}</mark>{:else}{p.t}{/if}{/each}</span>{/if}
     </span>
     {#if e.schedule}<span class="sched" class:failed={e.schedule.failed} title={e.schedule.failed ? "Schedule failed" : `Goes live ${when(e.schedule.at)}`}><ClockIcon /></span>{/if}
+    {#if e.takeDown}<span class="sched" class:failed={e.takeDown.failed} title={e.takeDown.failed ? "Take-down failed" : `Comes off ${when(e.takeDown.at)}`}><ClockIcon /></span>{/if}
     <span class="meta">{c?.label ?? e.collection} · {status(e)}{h ? "" : ` · ${when(e.updatedAt)}`}</span>
   </a></li>
 {/snippet}
@@ -61,7 +62,7 @@
       <ul class="hits">
         {#each queued as j}<li><a href={j.entry ? `#/${j.entry.collection}/${j.entry.id}` : "#/activity"}>
           <span class="sched" class:failed={j.status === "failed"}><ClockIcon /></span><span class="grow"><span class="title">{j.entry?.label ?? "An entry"}</span></span>
-          <span class="meta">{j.status === "failed" ? "Schedule failed" : `Goes live ${when(j.at)}`}</span></a></li>{/each}
+          <span class="meta">{j.status === "failed" ? "Schedule failed" : j.kind === "entry.unpublish" ? `Comes off ${when(j.at)}` : `Goes live ${when(j.at)}`}</span></a></li>{/each}
       </ul>
     </section>
   {/if}

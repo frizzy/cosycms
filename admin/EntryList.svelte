@@ -161,6 +161,7 @@
   const aria = (key: string) => (sort === key ? (dir === "asc" ? "ascending" : "descending") : "none");
   const label = (e: Entry) => (titled ? entryLabel(col.fields, e.data, e.slug, col.titleField) : e.slug);
   const soon = (e: Entry) => e.schedule && (e.schedule.failed ? "Schedule failed: " + e.schedule.error : "Goes live " + when(e.schedule.at));
+  const off = (e: Entry) => e.takeDown && (e.takeDown.failed ? "Take-down failed: " + e.takeDown.error : "Comes off " + when(e.takeDown.at));
   const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 </script>
 
@@ -214,7 +215,7 @@
         <div class="gwrap"><input type="checkbox" class="pick" aria-label="Select {label(e)}" checked={sel.includes(e.id)} onchange={() => toggle(e.id)} />
         <a class="gtile" href="#/{collection}/{e.id}" title={label(e)}>
           {#if e.thumb}<img src={blobUrl(e.thumb)} alt="" loading="lazy" />{:else}<span class="noimg"></span>{/if}
-          <span class="cap"><span class="ell">{label(e)}</span>{#if e.schedule}<span class="sched" class:failed={e.schedule.failed} title={soon(e)}><ClockIcon /></span>{/if}{#if e.published}<span class:edited={e.pending} title={e.pending ? "Published, with draft changes" : "Published"}><LiveIcon /></span>{/if}</span>
+          <span class="cap"><span class="ell">{label(e)}</span>{#if e.schedule}<span class="sched" class:failed={e.schedule.failed} title={soon(e)}><ClockIcon /></span>{/if}{#if e.takeDown}<span class="sched" class:failed={e.takeDown.failed} title={off(e)}><ClockIcon /></span>{/if}{#if e.published}<span class:edited={e.pending} title={e.pending ? "Published, with draft changes" : "Published"}><LiveIcon /></span>{/if}</span>
         </a></div>
       {:else}
         <p class="empty">{#if q.trim() || filter}No entries match{q.trim() ? ` “${q.trim()}”` : ""}{filter ? " this filter" : ""}.{:else}Nothing here yet. <a href="#/{collection}/new">Create the first entry.</a>{/if}</p>
@@ -239,6 +240,7 @@
             {#if col.thumbField}{#if e.thumb}<img class="thumb" src={blobUrl(e.thumb)} alt="" loading="lazy" />{:else}<span class="thumb none" aria-hidden="true"></span>{/if}{/if}
             <a class="ell" href="#/{collection}/{e.id}" title={label(e)}>{label(e)}</a>
             {#if e.schedule}<span class="sched" class:failed={e.schedule.failed} title={soon(e)}><ClockIcon />{e.schedule.failed ? "Schedule failed" : when(e.schedule.at)}</span>{/if}
+            {#if e.takeDown}<span class="sched" class:failed={e.takeDown.failed} title={off(e)}><ClockIcon />{e.takeDown.failed ? "Take-down failed" : "Off " + when(e.takeDown.at)}</span>{/if}
             {#if !schema.safeParse(e.data).success}<span class="warn" title="Doesn't match the current fields — open and fix it">⚠ needs attention</span>{/if}
           </div></td>
           <td class="c-status">{#if e.published}<span class:edited={e.pending} title={e.pending ? "Published, with changes in the draft that aren't live yet" : "Has a published version"}><LiveIcon />{e.pending ? "Edited" : "Published"}</span>{:else}Draft{/if}</td><td class="c-updated">{when(e.updatedAt)}</td>

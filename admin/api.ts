@@ -13,6 +13,7 @@ export type Entry = {
   live?: { slug: string; data: Record<string, unknown> } | null; // single-entry reads only: the published version
   publishAt?: string | null; unpublishAt?: string | null; publishedAt?: string | null; revisedAt?: string | null; // go-live time; first and latest publish
   schedule?: { at: string; failed: boolean; error?: string }; // goes live at `at` (ISO); `failed` once its attempts ran out
+  takeDown?: { at: string; failed: boolean; error?: string }; // comes off the site at `at`
   thumb?: string; // list view only: storage key of the thumbnail image, when the collection has a thumbnail field
 };
 export type EntryInput = Pick<Entry, "collection" | "slug" | "data" | "publishAt" | "unpublishAt"> & { keepCase?: Record<string, string[]> };

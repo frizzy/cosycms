@@ -222,6 +222,21 @@
     catch (e) { error = (e as Error).message; loading = false; }
   }
 
+  // A new draft from the saved draft (not unsaved edits), with a free slug and "(copy)" on the title; times and publication are not carried over.
+  async function duplicate() {
+    if (!id) return;
+    error = "";
+    try {
+      const src = await api.get(id), data = copy(src.data);
+      if (c.titleField && typeof data[c.titleField] === "string") data[c.titleField] = `${data[c.titleField]} (copy)`;
+      let s = `${src.slug}-copy`;
+      const free = await api.slugAvailable(collection, s);
+      if (!free.available && free.suggestion) s = free.suggestion;
+      const e = await api.create({ collection, slug: s, data });
+      refreshCounts(); toast("Duplicated as a draft");
+      location.hash = `#/${collection}/${e.id}`;
+    } catch (e) { error = (e as Error).message; }
+  }
   async function remove() {
     if (!id || !(await ask({ title: "Delete this entry?", message: "It moves to the Trash, where it can be restored for a while.", confirm: "Delete", danger: true }))) return;
     error = "";
@@ -274,6 +289,7 @@
       {#if id && published && pending && !dirty}<button type="button" class="ghost" onclick={revert}>Discard draft changes</button>{/if}
       {#if id && published}<button type="button" class="ghost" onclick={unpublish}>Unpublish</button>{/if}
       <button type="button" class="ghost" onclick={() => (previewing = true)}>Preview</button>
+      {#if id && !c.single}<button type="button" class="ghost" onclick={duplicate}>Duplicate</button>{/if}
       {#if id}<button type="button" class="danger" onclick={remove}>Delete</button>{/if}
       <span class="status">{#if error}<span class="error">{error}</span>{:else if dirty}<span class="dirty">Unsaved changes</span>{/if}</span>
     </div>
