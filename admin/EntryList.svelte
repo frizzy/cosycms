@@ -130,7 +130,7 @@
 
   // The scroll bar: the whole list as a track, what is loaded shaded, and the part on screen as the handle. Drag or click to jump.
   let listEl = $state<HTMLElement>(), track = $state<HTMLElement>(), navH = $state(0), headH = $state(0), headEl = $state<HTMLElement>();
-  let vis = $state({ top: 0, size: 1 }), bubble = $state<{ y: number; text: string } | null>(null), dragging = false;
+  let sbw = $state(0), vis = $state({ top: 0, size: 1 }), bubble = $state<{ y: number; text: string } | null>(null), dragging = false;
   const stick = $derived(navH + headH);
   $effect(() => {
     const nav = document.querySelector("nav"), mq = matchMedia("(max-width:760px)");
@@ -142,6 +142,7 @@
     return () => ro.disconnect();
   });
   function measure() {
+    sbw = innerWidth - document.documentElement.clientWidth; // a classic scroll bar takes room; the overlay kind (0) floats over the edge
     if (!listEl || !rows?.length || !total) return;
     const r = listEl.getBoundingClientRect(), frac = rows.length / total;
     const a = Math.min(1, Math.max(0, (stick - r.top) / r.height)), b = Math.min(1, Math.max(a, (innerHeight - r.top) / r.height));
@@ -274,7 +275,7 @@
 
 <svelte:window onscroll={measure} onresize={measure} />
 {#if showTrack}
-  <div class="scrub" role="presentation" bind:this={track} style="top:{stick + 8}px"
+  <div class="scrub" role="presentation" bind:this={track} style="top:{stick + 8}px;right:{sbw ? sbw + 6 : 20}px"
     onpointerdown={(e) => { dragging = true; track?.setPointerCapture(e.pointerId); jump(point(e)); }}
     onpointermove={(e) => { const f = point(e); if (dragging) jump(f); }}
     onpointerup={() => (dragging = false)} onpointercancel={() => (dragging = false)} onpointerleave={() => { if (!dragging) bubble = null; }}>

@@ -358,9 +358,12 @@ table.list th.c-pick, table.list td.c-pick { width:2.4rem; padding-right:0; text
 .listhead { position:sticky; top:var(--navh, 0px); z-index:6; background:var(--bg); padding:.5rem 0 .1rem; margin-top:-.5rem; }
 table.list thead th { position:sticky; top:var(--stick, 0px); z-index:5; background:var(--bg); }
 .count .more { padding:.05rem .6rem; font-size:.85rem; }
-.scrub { position:fixed; right:3px; bottom:.75rem; width:12px; border-radius:6px; background:var(--line); cursor:pointer; touch-action:none; z-index:20; }
-.scrub-loaded { position:absolute; left:0; right:0; top:0; border-radius:6px; background:var(--line-strong); }
-.scrub-handle { position:absolute; left:0; right:0; min-height:6px; border-radius:6px; background:var(--accent); opacity:.75; pointer-events:none; }
-.scrub:hover .scrub-handle { opacity:1; }
-.scrub-bubble { position:absolute; right:18px; transform:translateY(-50%); white-space:nowrap; padding:.2rem .55rem; border-radius:6px; background:var(--ink); color:var(--bg); font-size:.8rem; pointer-events:none; }
+/* The list's scroll bar is deliberately chunky and retro: hard edges, a dithered unloaded track, a solid block handle with a pixel shadow. */
+.scrub { position:fixed; bottom:.75rem; width:16px; box-sizing:border-box; border:2px solid var(--ink); border-radius:0; cursor:pointer; touch-action:none; z-index:20;
+  background-color:var(--bg); background-image:linear-gradient(45deg,var(--line-strong) 25%,transparent 25% 75%,var(--line-strong) 75%),linear-gradient(45deg,var(--line-strong) 25%,transparent 25% 75%,var(--line-strong) 75%); background-size:4px 4px; background-position:0 0,2px 2px; }
+.scrub-loaded { position:absolute; left:0; right:0; top:0; background:var(--line-strong); }
+.scrub-handle { position:absolute; left:-2px; right:-2px; box-sizing:border-box; min-height:14px; border:2px solid var(--ink); border-radius:0; box-shadow:2px 2px 0 var(--ink); pointer-events:none;
+  background-color:var(--accent); background-image:repeating-linear-gradient(0deg,transparent 0 2px,rgba(0,0,0,.28) 2px 4px); background-size:100% 10px; background-repeat:no-repeat; background-position:center; }
+.scrub:hover .scrub-handle, .scrub:active .scrub-handle { background-color:var(--accent-text); }
+.scrub-bubble { position:absolute; right:26px; transform:translateY(-50%); white-space:nowrap; padding:.2rem .5rem; border:2px solid var(--ink); border-radius:0; background:var(--bg); color:var(--ink); box-shadow:3px 3px 0 var(--ink); font:500 .78rem/1.3 "IBM Plex Mono", ui-monospace, monospace; pointer-events:none; }
 @media (max-width:600px) { .scrub { display:none; } }
