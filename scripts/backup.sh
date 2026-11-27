@@ -14,6 +14,8 @@ FILE="$DEST/cosycms-$(date +%Y%m%d-%H%M%S).tar.gz"
 SNAP="$DEST/.snapshot" # the same path every night, so restic can tell what changed
 URL=${APP_URL:-https://localhost:${PORT:-8787}} # where the app answers on this machine
 STEP="stopping the app"; STOPPED=0; DETAIL=""
+. "$APP/scripts/backup-lib.sh"
+load_destination # asked now, while the app is still running
 
 # However this ends: restart the app, tidy up, and tell the app how it went.
 finish() {
@@ -33,7 +35,7 @@ trap finish EXIT
 docker compose stop -t 20 >/dev/null; STOPPED=1
 STEP="writing the local archive"
 tar -czf "$FILE.part" data .dev.vars && mv "$FILE.part" "$FILE"
-OFFSITE=0; [ -f .backup.env ] && OFFSITE=1
+OFFSITE=0; [ "$COSY_DEST" != none ] && OFFSITE=1
 if [ $OFFSITE = 1 ]; then STEP="copying the data for the off-box upload"; rm -rf "$SNAP"; mkdir "$SNAP"; cp -a data .dev.vars "$SNAP"/; fi
 STEP="restarting the app"; docker compose start >/dev/null; STOPPED=0
 ls -1t "$DEST"/cosycms-*.tar.gz | tail -n +$((KEEP + 1)) | xargs -r rm -f --
@@ -41,10 +43,10 @@ DETAIL="$(du -h "$FILE" | cut -f1) archive on this machine"
 
 if [ $OFFSITE = 1 ]; then
   STEP="the off-box upload"
-  PATH="$HOME/bin:$PATH"; set -a; . ./.backup.env; set +a
-  restic backup --quiet --tag cosycms --host cosycms "$SNAP"
+  if [ "$COSY_DEST" = file ]; then ensure_restic; else use_destination; fi
+  rc backup --quiet --tag cosycms --host cosycms "$SNAP"
   STEP="thinning old off-box snapshots"
-  restic forget --quiet --tag cosycms --host cosycms --keep-daily 14 --keep-weekly 8 --keep-monthly 12 --prune
-  DETAIL="$DETAIL; off-box: $(restic snapshots --compact --tag cosycms --host cosycms 2>/dev/null | tail -1)"
+  rc forget --quiet --tag cosycms --host cosycms --keep-daily 14 --keep-weekly 8 --keep-monthly 12 --prune
+  DETAIL="$DETAIL; off-box: $(rc snapshots --compact --tag cosycms --host cosycms 2>/dev/null | tail -1)"
 fi
 echo "$(date -Iseconds) $FILE $DETAIL"

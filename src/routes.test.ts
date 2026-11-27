@@ -98,3 +98,56 @@ test("media health flags weak alt text, unused images and large files", async ()
   assert.equal(h.weakAlt[0].why, "Same as the file name");
   assert.equal((await t.call("GET", "/media-health", undefined, t.member)).status, 403, "owners only");
 });
+
+const r2 = { type: "r2", accountId: "0123456789abcdef0123456789abcdef", bucket: "my-backups", accessKeyId: "AKIATESTKEY12345", secret: "it's a $secret; rm -rf /" };
+
+test("the backup destination is validated, stored encrypted and never shown back", async () => {
+  const c = testEnv();
+  assert.equal((await c.call("PUT", "/backup/destination", { ...r2, bucket: "Bad Bucket" })).status, 400);
+  assert.equal((await c.call("PUT", "/backup/destination", { type: "ssh", host: "-oProxyCommand=evil", user: "u", path: "/x" })).status, 400, "a host can't smuggle ssh options");
+  assert.equal((await c.call("PUT", "/backup/destination", { ...r2, secret: undefined })).status, 400, "the first save needs the secret");
+  const saved = await c.call("PUT", "/backup/destination", r2);
+  assert.equal(saved.status, 200);
+  assert.ok(saved.body.newPassword, "the repository password is shown once, when it is made");
+  assert.deepEqual([saved.body.dest.hasSecret, "secret" in saved.body.dest && saved.body.dest.secret !== undefined], [true, false]);
+  assert.doesNotMatch(JSON.stringify((await c.call("GET", "/backup/destination")).body), /rm -rf/, "the secret never comes back");
+  const stored = (c.db.prepare("select value from settings where key = 'backup.dest'").get() as { value: string }).value;
+  assert.doesNotMatch(stored, /rm -rf|AKIA|my-backups/, "stored sealed");
+  const again = await c.call("PUT", "/backup/destination", { ...r2, secret: undefined, bucket: "other-bucket" }); // keeps the saved secret
+  assert.equal(again.status, 200);
+  assert.equal(again.body.newPassword, undefined, "no second password");
+  assert.ok((await c.call("GET", "/backup/password")).body.password);
+  assert.equal((await c.call("PUT", "/backup/destination", r2, c.member)).status, 403, "owners only");
+});
+
+test("the host asks for the destination as quoted shell assignments, and claims a queued test once", async () => {
+  const c = testEnv();
+  assert.equal((await c.script("GET", "/api/backup/job")).text, "COSY_DEST='none'\nCOSY_TEST='0'\n");
+  await c.call("PUT", "/backup/destination", r2);
+  const job = (await c.script("GET", "/api/backup/job")).text;
+  assert.match(job, /COSY_DEST='r2'/);
+  assert.match(job, /RESTIC_REPOSITORY='s3:https:\/\/0123456789abcdef0123456789abcdef\.r2\.cloudflarestorage\.com\/my-backups'/);
+  assert.ok(job.includes(`AWS_SECRET_ACCESS_KEY='it'\\''s a $secret; rm -rf /'`), "quotes in a value can't break out of the shell string");
+  assert.match(job, /COSY_TEST='0'/);
+  await c.call("POST", "/backup/test");
+  assert.match((await c.script("GET", "/api/backup/job")).text, /COSY_TEST='1'/);
+  assert.match((await c.script("GET", "/api/backup/job")).text, /COSY_TEST='0'/, "a second ask doesn't run it again");
+  assert.equal((await c.call("GET", "/backup/destination")).body.test.state, "running");
+  await c.script("POST", "/api/backup/test-result", { ok: false, detail: "permission denied" });
+  assert.deepEqual((await c.call("GET", "/backup/destination")).body.test.detail, "permission denied");
+});
+
+test("only the tick token reaches the host endpoints, and an ssh destination reports its key", async () => {
+  const c = testEnv();
+  const bare = await (await import("./index.ts")).default.fetch(new Request("http://localhost/api/backup/job"), c.env as never, {} as never);
+  assert.equal(bare.status, 401);
+  await c.call("PUT", "/backup/destination", { type: "ssh", host: "nas.local", port: 2222, user: "backup", path: "/srv/b" });
+  assert.match((await c.script("GET", "/api/backup/job")).text, /RESTIC_REPOSITORY='sftp:backup@nas\.local:\/srv\/b'\nCOSY_SSH_PORT='2222'|COSY_SSH_PORT='2222'/);
+  assert.equal((await c.script("POST", "/api/backup/pubkey", { key: "not a key" })).status, 400);
+  assert.equal((await c.script("POST", "/api/backup/pubkey", { key: "ssh-ed25519 AAAAC3Nza cosycms-backup" })).status, 204);
+  assert.equal((await c.call("GET", "/backup/destination")).body.pubkey, "ssh-ed25519 AAAAC3Nza cosycms-backup");
+  assert.equal((await c.call("POST", "/backup/test")).body.test.state, "pending");
+  await c.call("PUT", "/backup/destination", { type: "none" });
+  assert.equal((await c.call("GET", "/backup/destination")).body.dest, null);
+  assert.equal((await c.call("POST", "/backup/test")).status, 400, "nothing to test");
+});

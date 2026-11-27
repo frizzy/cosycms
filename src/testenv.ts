@@ -31,7 +31,7 @@ export function testEnv() {
   db.exec("delete from collections"); // the migrations seed a starter collection; tests define their own
   const blobs = new Map<string, { bytes: Uint8Array; type: string }>();
   const env = {
-    DB: d1(db),
+    DB: d1(db), SETTINGS_KEY: Buffer.alloc(32, 7).toString("base64"), TICK_TOKEN: "test-tick-token",
     BLOBS: { head: async (k: string) => blobs.get(k) && { size: blobs.get(k)!.bytes.length, httpMetadata: { contentType: "image/png" } }, put: async (k: string, b: Uint8Array, o: { httpMetadata: { contentType: string } }) => void blobs.set(k, { bytes: b, type: o.httpMetadata.contentType }), get: async () => null },
   } as never;
   const person = (id: string, email: string, role: "owner" | "member") => {
@@ -50,5 +50,10 @@ export function testEnv() {
     const text = await res.text();
     return { status: res.status, body: text ? JSON.parse(text) : null };
   }
-  return { db, env: env as unknown as { BLOBS: { put(k: string, b: Uint8Array, o: { httpMetadata: { contentType: string } }): Promise<void> } }, call, owner, member, tick: () => tick(env) };
+  /** A request the way the host's scripts make it: with the tick token, not a session. */
+  async function script(method: string, path: string, body?: unknown) {
+    const res = await app.fetch(new Request(`http://localhost${path}`, { method, headers: { authorization: "Bearer test-tick-token", ...(body === undefined ? {} : { "content-type": "application/json" }) }, body: body === undefined ? undefined : JSON.stringify(body) }), env, { waitUntil() {}, passThroughOnException() {} } as never);
+    return { status: res.status, text: await res.text() };
+  }
+  return { script, db, env: env as unknown as { BLOBS: { put(k: string, b: Uint8Array, o: { httpMetadata: { contentType: string } }): Promise<void> } }, call, owner, member, tick: () => tick(env) };
 }

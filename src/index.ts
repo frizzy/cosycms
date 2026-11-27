@@ -19,6 +19,7 @@ import { githubCheck, githubFailedStep, githubRuns, githubTarget } from "./githu
 import { r2Store } from "./blobs.ts";
 import { KEY_RE, MAX_IMAGE_BYTES, blobKey, blobUrl, sniffImage, type FileValue } from "./images.ts";
 import { weakAlt } from "./alt.ts";
+import { Destination, getPassword, getPubkey, getTest, jobScript, loadDest, publicView, saveDest, setPubkey, setTest } from "./backup.ts";
 import { docBlockNames, docImageIds, docLinkIds, fillPictures } from "./markdown.ts";
 import { sha256 } from "./plan.ts";
 import { build, publish } from "./publish.ts";
@@ -392,6 +393,27 @@ app.get("/search/status", ownerOnly, async (c) => {
 app.get("/backup/status", ownerOnly, async (c) => {
   const [r] = await db(c).select().from(settings).where(eq(settings.key, "backup.last"));
   return c.json({ last: r ? (JSON.parse(r.value) as { at: string; detail: string }) : null });
+});
+// Where the off-server backup goes (see src/backup.ts). The owner sets it here; the host's backup script reads it back with the tick token.
+const backupState = async (c: { env: Env["Bindings"] }) => ({ dest: publicView(await loadDest(c.env.DB, c.env)), pubkey: await getPubkey(c.env.DB), test: await getTest(c.env.DB), hasPassword: !!(await getPassword(c.env.DB, c.env)) });
+app.get("/backup/destination", ownerOnly, async (c) => { try { return c.json(await backupState(c)); } catch (e) { return c.json({ error: (e as Error).message }, 500); } });
+app.put("/backup/destination", ownerOnly, humanOnly, async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const input = body?.type === "none" ? null : Destination.safeParse(body);
+  if (input && !input.success) return c.json({ error: input.error.issues.map((i) => i.message).join(" ") }, 400);
+  try {
+    const { newPassword } = await saveDest(c.env.DB, c.env, input ? input.data : null);
+    await log(c, { action: "settings.save", label: "backup destination", detail: input ? input.data.type : "removed" });
+    return c.json({ ...(await backupState(c)), newPassword });
+  } catch (e) { return c.json({ error: (e as Error).message }, 400); }
+});
+// Encrypted copies can't be read without this, and it is kept in the same database the backups protect: the owner needs a copy somewhere else.
+app.get("/backup/password", ownerOnly, humanOnly, async (c) => { try { const password = await getPassword(c.env.DB, c.env); return password ? c.json({ password }) : c.json({ error: "No destination has been set up." }, 404); } catch (e) { return c.json({ error: (e as Error).message }, 500); } });
+// Queues a test; the host's every-minute job picks it up, writes a small file to the destination, reads it back and deletes it, then reports.
+app.post("/backup/test", ownerOnly, humanOnly, async (c) => {
+  if (!(await loadDest(c.env.DB, c.env).catch(() => null))) return c.json({ error: "Save a destination first." }, 400);
+  await setTest(c.env.DB, { state: "pending", at: new Date().toISOString() });
+  return c.json(await backupState(c));
 });
 app.post("/search/rebuild", ownerOnly, async (c) => { await rebuildIndex(c); return c.body(null, 204); });
 
@@ -851,6 +873,31 @@ const automationDenied = (c: { env: Env["Bindings"]; req: { header(n: string): s
   if (got.length !== want.length || [...want].reduce((d, ch, i) => d | (ch.charCodeAt(0) ^ got.charCodeAt(i)), 0)) return c.json({ error: "unauthorized" }, 401);
   return null;
 };
+// The host's scripts read the destination as shell assignments (scripts/backup-lib.sh). Asking for it also claims a queued test, so only one run takes it.
+root.get("/api/backup/job", async (c) => {
+  const denied = automationDenied(c);
+  if (denied) return denied;
+  const dest = await loadDest(c.env.DB, c.env).catch(() => null), test = await getTest(c.env.DB);
+  const testing = !!dest && test?.state === "pending";
+  if (testing) await setTest(c.env.DB, { state: "running", at: new Date().toISOString() });
+  return c.text(jobScript(dest, dest ? await getPassword(c.env.DB, c.env).catch(() => null) : null, testing));
+});
+root.post("/api/backup/test-result", async (c) => {
+  const denied = automationDenied(c);
+  if (denied) return denied;
+  const b = z.object({ ok: z.boolean(), detail: z.string().max(400).optional() }).safeParse(await c.req.json().catch(() => null));
+  if (!b.success) return c.json({ error: "expected { ok, detail? }" }, 400);
+  await setTest(c.env.DB, { state: b.data.ok ? "ok" : "failed", at: new Date().toISOString(), detail: b.data.detail });
+  return c.body(null, 204);
+});
+root.post("/api/backup/pubkey", async (c) => {
+  const denied = automationDenied(c);
+  if (denied) return denied;
+  const b = z.object({ key: z.string().regex(/^ssh-ed25519 [A-Za-z0-9+/=]+( [^\r\n]{0,100})?$/) }).safeParse(await c.req.json().catch(() => null));
+  if (!b.success) return c.json({ error: "expected an ed25519 public key" }, 400);
+  await setPubkey(c.env.DB, b.data.key);
+  return c.body(null, 204);
+});
 root.post("/api/tick", async (c) => automationDenied(c) ?? c.json(await tick(c.env)));
 root.post("/api/backup/report", async (c) => {
   const denied = automationDenied(c);

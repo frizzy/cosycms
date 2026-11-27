@@ -4,4 +4,7 @@
 APP=$(cd "$(dirname "$0")/.." && pwd)
 TOKEN=$(sed -n 's/^TICK_TOKEN=//p' "$APP/.dev.vars" 2>/dev/null)
 [ -n "$TOKEN" ] || exit 0
-curl -fsSk -m 55 -X POST -H "Authorization: Bearer $TOKEN" "https://localhost:${PORT:-8787}/api/tick"
+curl -fsSk -m 55 -X POST -H "Authorization: Bearer $TOKEN" "https://localhost:${PORT:-8787}/api/tick"; RC=$?
+echo
+sh "$APP/scripts/backup-test.sh" >/dev/null 2>&1 || true # a destination test the owner asked for in Settings
+exit $RC

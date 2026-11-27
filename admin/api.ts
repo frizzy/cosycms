@@ -44,6 +44,8 @@ export type Notice = { id: string; at: string; kind: string; level: "error" | "s
 export type Activity = { id: string; at: string; actor: string; via: string | null; action: string; collection: string | null; entryId: string | null; label: string | null; detail: string | null; undoable: number };
 export type HealthRow = { id: string; collection: string; label: string; file: { key: string; size: number; width?: number; height?: number } };
 export type MediaHealth = { total: number; counts: { unused: number; large: number; weakAlt: number }; unused: HealthRow[]; large: HealthRow[]; weakAlt: (HealthRow & { alt: string; altKey: string; why: string })[] };
+export type BackupDest = { type: "r2"; accountId: string; bucket: string; accessKeyId: string; hasSecret?: boolean; prefix?: string } | { type: "ssh"; host: string; port?: number; user: string; path: string };
+export type BackupState = { dest: BackupDest | null; pubkey: string | null; hasPassword: boolean; test: { state: "pending" | "running" | "ok" | "failed"; at: string; detail?: string } | null };
 export type Used = { id: string; collection: string; slug: string; title: string };
 export type Trashed = { id: string; at: string; actor: string; collection: string; label: string; entryId: string };
 export type Counts = Record<string, { drafts: number; edited: number }>;
@@ -121,6 +123,10 @@ export const api = {
   values: (collection: string, field: string) => call<string[]>(`/collections/${collection}/values/${field}`),
   find: (q: string, limit = 20) => call<{ total: number; items: Hit[] }>(`/search?q=${encodeURIComponent(q)}&limit=${limit}`),
   recent: (limit = 10) => call<{ items: Entry[] }>(`/entries/recent?limit=${limit}`),
+  backupDest: () => call<BackupState>("/backup/destination"),
+  saveBackupDest: (d: Record<string, unknown>) => call<BackupState & { newPassword?: string }>("/backup/destination", { method: "PUT", body: JSON.stringify(d) }),
+  testBackup: () => call<BackupState>("/backup/test", { method: "POST" }),
+  backupPassword: () => call<{ password: string }>("/backup/password"),
   backupStatus: () => call<{ last: { at: string; detail: string } | null }>("/backup/status"),
   searchStatus: () => call<{ entries: number; indexed: number; links: number }>("/search/status"),
   rebuildSearch: () => call<void>("/search/rebuild", { method: "POST" }),
