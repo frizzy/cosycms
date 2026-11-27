@@ -1,8 +1,8 @@
 import { drizzle } from "drizzle-orm/d1";
 import { eq, inArray, like } from "drizzle-orm";
-import { publishState, settings } from "./schema";
-import { isSealed, seal, unseal } from "./seal";
-import { credsFromEnv, isProvider, providerList, type Creds, type ProviderEnv } from "./providers";
+import { publishState, settings } from "./schema.ts";
+import { isSealed, seal, unseal } from "./seal.ts";
+import { credsFromEnv, isProvider, providerList, type Creds, type ProviderEnv } from "./providers.ts";
 
 const KEYS = ["github.token", "github.repo", "github.branch", "github.dir"] as const;
 type Env = { SETTINGS_KEY?: string; GITHUB_TOKEN?: string; GITHUB_REPO?: string; GITHUB_BRANCH?: string; GITHUB_DIR?: string };

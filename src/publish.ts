@@ -1,8 +1,8 @@
 import { drizzle } from "drizzle-orm/d1";
 import { and, eq, inArray } from "drizzle-orm";
-import { blocks, collections, entries, publishState } from "./schema";
-import { draftWarnings, plan, type RenderCtx } from "./plan";
-import type { Change, Target } from "./targets";
+import { blocks, collections, entries, publishState } from "./schema.ts";
+import { draftWarnings, plan, type RenderCtx } from "./plan.ts";
+import type { Change, Target } from "./targets.ts";
 
 // shortcut: Workers cap the work done per request, so images go in batches; the rest follow on the next publish.
 const MAX_IMAGES_PER_PUBLISH = 20;

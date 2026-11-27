@@ -2,11 +2,14 @@
   // A date and time picker. The value is a UTC ISO string (or undefined when empty); the picker works in the browser's timezone.
   // Native datetime-local inputs are unreliable (Safari shows a default date but keeps the value empty until every part is touched),
   // so this is a calendar plus a time box, and choosing either part fills in a sensible other part.
-  let { value = $bindable(), disabled = false }: { value?: string; disabled?: boolean } = $props();
+  // future: a time that has to be ahead (a go-live or take-down). A saved value that has passed is stale: the picker opens on today instead of that
+  // old date, a time typed alone means today, and earlier days can't be picked.
+  let { value = $bindable(), disabled = false, future = false }: { value?: string; disabled?: boolean; future?: boolean } = $props();
 
   const DEFAULT_TIME = [9, 0];
   const pad = (n: number) => String(n).padStart(2, "0");
   const parsed = $derived(value && !isNaN(Date.parse(value)) ? new Date(value) : null);
+  const stale = $derived(future && !!parsed && +parsed <= Date.now()); // set, but already in the past
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const label = $derived(parsed ? parsed.toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }) : "");
   const timeText = $derived(parsed ? `${pad(parsed.getHours())}:${pad(parsed.getMinutes())}` : "");
@@ -20,11 +23,12 @@
     return [...Array((first.getDay() + 6) % 7).fill(null), ...Array.from({ length: n }, (_, i) => i + 1)] as (number | null)[];
   });
   const same = (a: Date | null, y: number, m: number, d: number) => !!a && a.getFullYear() === y && a.getMonth() === m && a.getDate() === d;
-  const today = new Date();
+  const today = new Date(), startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const before = (d: number) => future && new Date(view.getFullYear(), view.getMonth(), d) < startOfToday;
 
   function show() {
     if (disabled) return;
-    const b = parsed ?? new Date();
+    const b = parsed && !stale ? parsed : new Date();
     view = new Date(b.getFullYear(), b.getMonth(), 1);
     open = true;
   }
@@ -35,7 +39,7 @@
   function pickTime(t: string) {
     const [h, min] = t.split(":").map(Number);
     if (!t || isNaN(h)) return;
-    const base = parsed ?? new Date(); // a time with no date yet means today
+    const base = parsed && !stale ? parsed : new Date(); // a time with no date yet (or a stale one) means today
     set(base.getFullYear(), base.getMonth(), base.getDate(), h, min);
   }
   const step = (by: number) => (view = new Date(view.getFullYear(), view.getMonth() + by, 1));
@@ -60,7 +64,7 @@
         {#each names as n}<span class="dt-dow" aria-hidden="true">{n}</span>{/each}
         {#each days as d}
           {#if d === null}<span></span>
-          {:else}<button type="button" class="dt-day" class:sel={same(parsed, view.getFullYear(), view.getMonth(), d)} class:now={same(today, view.getFullYear(), view.getMonth(), d)} aria-pressed={same(parsed, view.getFullYear(), view.getMonth(), d)} onclick={() => pickDay(d)}>{d}</button>{/if}
+          {:else}<button type="button" class="dt-day" class:sel={same(parsed, view.getFullYear(), view.getMonth(), d)} class:now={same(today, view.getFullYear(), view.getMonth(), d)} aria-pressed={same(parsed, view.getFullYear(), view.getMonth(), d)} disabled={before(d)} onclick={() => pickDay(d)}>{d}</button>{/if}
         {/each}
       </div>
       <div class="dt-foot">

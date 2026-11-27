@@ -3,6 +3,7 @@
   "private": true,
   "license": "MIT",
   "type": "module",
+  "engines": { "node": ">=22.13" },
   "scripts": {
     "dev": "wrangler dev --port 8787",
     "dev:admin": "vite",

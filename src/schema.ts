@@ -1,5 +1,5 @@
-import type { Field } from "./fields";
-import type { PropDef } from "./blocks";
+import type { Field } from "./fields.ts";
+import type { PropDef } from "./blocks.ts";
 import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 // DB is the source of truth. `body` is the editor's native JSON (e.g. Tiptap), serialised.

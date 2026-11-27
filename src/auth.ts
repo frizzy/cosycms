@@ -5,11 +5,11 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { drizzle } from "drizzle-orm/d1";
 import { and, count, eq, gt, lt } from "drizzle-orm";
 import { z } from "zod";
-import { clients, tokens, users } from "./schema";
-import { hashPassword, verifyPassword } from "./passwords";
-import { authorizeUrl, configured, isProvider, verifiedEmail, type ProviderEnv } from "./providers";
-import { logActivity, type Event } from "./activity";
-import { clearProvider, loadProviders, providerStatus, saveProvider } from "./settings";
+import { clients, tokens, users } from "./schema.ts";
+import { hashPassword, verifyPassword } from "./passwords.ts";
+import { authorizeUrl, configured, isProvider, verifiedEmail, type ProviderEnv } from "./providers.ts";
+import { logActivity, type Event } from "./activity.ts";
+import { clearProvider, loadProviders, providerStatus, saveProvider } from "./settings.ts";
 
 // People sign in with email + password or a social account. The browser gets a session cookie; MCP clients and other apps
 // get OAuth 2.1 tokens (authorization code + PKCE, dynamic client registration) that the same middleware accepts.

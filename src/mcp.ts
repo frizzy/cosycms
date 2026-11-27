@@ -1,7 +1,7 @@
 import type { Context } from "hono";
-import { toMarkdown, type Node } from "./markdown";
-import { fromMarkdown, LIBRARY_PREFIX } from "./markdown-import";
-import { entryLabel } from "./fields";
+import { toMarkdown, type Node } from "./markdown.ts";
+import { fromMarkdown, LIBRARY_PREFIX } from "./markdown-import.ts";
+import { entryLabel } from "./fields.ts";
 
 // A small MCP server (Streamable HTTP, stateless, JSON replies). Tools don't re-implement anything: each one calls the
 // same /api routes the admin uses, with the caller's own credentials, so validation and permissions are identical.

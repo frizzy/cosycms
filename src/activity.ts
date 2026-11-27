@@ -1,5 +1,5 @@
 import { drizzle } from "drizzle-orm/d1";
-import { activity } from "./schema";
+import { activity } from "./schema.ts";
 
 export type Actor = { email: string; via?: string };
 export type Event = { action: string; collection?: string; entryId?: string; label?: string; detail?: string; before?: { slug: string; data: Record<string, unknown> } };

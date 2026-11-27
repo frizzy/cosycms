@@ -278,8 +278,8 @@
       </div>
     </div>
     {#if c.dates}
-      <FieldInput field={GO_LIVE} bind:value={publishAt} locked={published ? "Locked while published. Unpublish to change it." : ""} />
-      <FieldInput field={TAKE_DOWN} bind:value={unpublishAt} />
+      <FieldInput field={GO_LIVE} future bind:value={publishAt} locked={published ? "Locked while published. Unpublish to change it." : ""} />
+      <FieldInput field={TAKE_DOWN} future bind:value={unpublishAt} />
       {#if unpublishAt && Date.parse(unpublishAt) <= Date.now()}<small class="error">That time has passed, so nothing will happen. Pick a later time, or clear it.</small>
       {:else if unpublishAt}<small class="muted">{published || publishAt ? "It comes off the site and deploys then; the draft stays." : "Once published, it comes off the site and deploys then; the draft stays."}</small>{:else if !unpublishAt}<small class="muted">Optional. Set a time to have it taken off the site and deployed then.</small>{/if}
       {#if !published && publishAt && Date.parse(publishAt) <= Date.now()}<small class="error">That time has passed, so it won't be scheduled. Pick a later time, or clear it.</small>{/if}

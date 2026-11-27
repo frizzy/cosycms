@@ -10,7 +10,7 @@
   import { api } from "./api";
 
   // One input per field definition. Used by the entry editor and by the picker's quick-create form.
-  let { field: f, value = $bindable(), locked = "", collection = "" }: { field: Field; value?: unknown; locked?: string; collection?: string } = $props(); // locked: read-only, and why
+  let { field: f, value = $bindable(), locked = "", collection = "", future = false }: { field: Field; value?: unknown; locked?: string; collection?: string; future?: boolean } = $props(); // locked: read-only, and why
   const name = $derived(f.label + (f.required && f.type !== "boolean" && f.type !== "richtext" ? " *" : ""));
   const uid = Math.random().toString(36).slice(2);
   // Free-form tags suggest what other entries in the collection already use.
@@ -54,7 +54,7 @@
     {:else if f.type === "datetime" && f.autoSet === "save"}
       <input value={value ? new Date(String(value)).toLocaleString() : "Set when you save"} disabled />
     {:else if f.type === "datetime"}
-      <DateTimeInput bind:value={value as string | undefined} disabled={!!locked} />
+      <DateTimeInput bind:value={value as string | undefined} disabled={!!locked} {future} />
       {#if locked}<small class="muted">{locked}</small>{/if}
       {#if f.autoSet === "create" && !value}<small class="muted">Filled in with the time you save, if left empty.</small>{/if}
     {:else if f.type === "boolean"}
