@@ -162,6 +162,13 @@
       "when": 1795689932730,
       "tag": "0022_cheerful_hulk",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1795782513212,
+      "tag": "0024_entry_keep_case",
+      "breakpoints": true
     }
   ]
 }

@@ -5,6 +5,7 @@ import { and, count, desc, eq, inArray, isNull, like, ne, or, sql } from "drizzl
 import { z } from "zod";
 import { activity, blocks, collections, entries, notifications, schedule, settings, templates } from "./schema";
 import { notify, successWanted } from "./notifications";
+import { unitsOf } from "./casing";
 import { INDEX_VERSION, type Indexable, ftsQuery, rebuild as rebuildAll, reindex, reindexTemplate, searchIndex, unindex, unindexTemplate } from "./search";
 import { futureTime, runDue, setJob, type Job } from "./schedule";
 import { TemplateDef } from "./templates";
@@ -31,6 +32,7 @@ const Input = z.object({
   slug: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "lowercase letters, numbers and dashes"),
   data: z.record(z.string(), z.unknown()),
   publishAt: z.iso.datetime().nullish(), // go-live time (collections with dates); absent = leave as is, null = clear
+  keepCase: z.record(z.string(), z.array(z.string())).optional(), // per field, text the person chose to leave as typed (see casing.ts); absent = use what is remembered
 });
 
 const db = (c: { env: Env["Bindings"] }) => drizzle(c.env.DB);
@@ -52,7 +54,7 @@ const blocksOf = async (c: { env: Env["Bindings"] }, keys?: string[]) =>
   keys?.length ? await db(c).select().from(blocks).where(inArray(blocks.key, keys)) : [];
 
 /** Validates an entry against its collection's current fields; unknown data keys are stripped. */
-async function parseEntry(c: { env: Env["Bindings"] }, raw: unknown, creating: boolean) {
+async function parseEntry(c: { env: Env["Bindings"] }, raw: unknown, creating: boolean, remembered?: Record<string, string[]> | null) {
   const base = Input.safeParse(raw);
   if (!base.success) return { error: base.error.flatten() };
   const [col] = await db(c).select().from(collections).where(eq(collections.key, base.data.collection));
@@ -60,7 +62,7 @@ async function parseEntry(c: { env: Env["Bindings"] }, raw: unknown, creating: b
   // Automatic timestamps are filled in before validation, so a required one never blocks the save.
   const given = { ...base.data.data }, now = new Date().toISOString();
   for (const f of col.fields) if (f.type === "datetime" && f.autoSet && (f.autoSet === "save" || (creating && !given[f.key]))) given[f.key] = now;
-  const data = dataSchema(col).safeParse(given);
+  const keep = base.data.keepCase ?? remembered ?? {}, data = dataSchema(col, keep).safeParse(given);
   if (!data.success) return { error: flat("data", data.error.issues.map((i) => `${i.path.join(".") || "value"}: ${i.message}`)) };
   // Uploaded files: the object must exist, and size/type come from storage, not from what the client claims.
   const blobs = r2Store(c.env.BLOBS), out = data.data as Record<string, any>;
@@ -94,7 +96,11 @@ async function parseEntry(c: { env: Env["Bindings"] }, raw: unknown, creating: b
     if (!head) return { error: flat("data", [`${f.key}: file not found, upload it again`]) };
     out[f.key] = { ...out[f.key], size: head.size, mime: head.contentType };
   }
-  return { value: { ...base.data, data: out as Record<string, unknown> } };
+  // What is remembered is only what still exists in the entry as typed, so an edited heading is asked about afresh.
+  const kept: Record<string, string[]> = {};
+  for (const f of col.fields) if ("casing" in f && f.casing) { const u = unitsOf(f.type, given[f.key]), k = (keep[f.key] ?? []).filter((t) => u.includes(t)); if (k.length) kept[f.key] = k; }
+  const { keepCase: _, ...rest } = base.data;
+  return { value: { ...rest, keepCase: Object.keys(kept).length ? kept : null, data: out as Record<string, unknown> } };
 }
 
 app.put("/uploads", bodyLimit({ maxSize: MAX_IMAGE_BYTES, onError: (c) => c.json({ error: "That image is larger than 10 MB." }, 413) }), async (c) => {
@@ -417,10 +423,10 @@ app.post("/entries", async (c) => {
 });
 
 app.put("/entries/:id", async (c) => {
-  const input = await parseEntry(c, await c.req.json(), false);
-  if (!input.value) return c.json(input.error, 400);
   const [old] = await db(c).select().from(entries).where(eq(entries.id, c.req.param("id")));
   if (!old) return c.json({ error: "not found" }, 404);
+  const input = await parseEntry(c, await c.req.json(), false, old.keepCase);
+  if (!input.value) return c.json(input.error, 400);
   const [col] = await db(c).select({ dates: collections.dates }).from(collections).where(eq(collections.key, old.collection));
   const given = input.value.publishAt, publishAt = !col?.dates ? null : given === undefined ? old.publishAt : given ? new Date(given) : null;
   if (old.live && publishAt?.getTime() !== old.publishAt?.getTime()) return c.json({ error: "The go-live time is locked while the entry is published. Unpublish it first to change it." }, 409);

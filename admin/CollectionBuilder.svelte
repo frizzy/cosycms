@@ -35,6 +35,7 @@
   type Row = { uid: string; key: string; label: string; type: string; preset: string; required: boolean; options: string;
     multiple: boolean; allowCustom: boolean; isNew: boolean; touched: boolean;
     maxSize: number | null; format: string; quality: number | null; strip: boolean; // image options; null = default
+    casing: string; // text, long text, rich text headings: "" | "words" | "title"
     autoSet: string; // datetime: "" | "create" | "save"
     folder: string; keepName: boolean; publishAs: string; // image: where it is published, under what name, and the entry's value
     imageComponent: string; // rich text: MDX component for images with settings
@@ -49,13 +50,14 @@
     allowCustom: f.type === "select" && !!f.allowCustom, isNew: false, touched: true,
     maxSize: f.type === "file" ? f.maxSize ?? null : null, format: f.type === "file" ? f.format ?? "keep" : "keep",
     quality: f.type === "file" ? f.quality ?? null : null, strip: f.type === "file" ? f.stripMetadata ?? true : true,
+    casing: (f.type === "text" || f.type === "textarea" || f.type === "richtext") ? f.casing ?? "" : "",
     autoSet: f.type === "datetime" ? f.autoSet ?? "" : "", folder: f.type === "file" ? f.folder ?? "" : "", keepName: f.type === "file" && !!f.keepName,
     publishAs: f.type === "file" ? f.publishAs ?? "object" : "object",
     target: f.type === "reference" ? f.collection : "", libOnly: false, library: f.type === "richtext" ? f.imageLibrary ?? "" : "", imageComponent: f.type === "richtext" ? f.imageComponent ?? "" : "", blocks: f.type === "richtext" ? f.blocks ?? [] : [], templates: f.type === "richtext" ? f.templates ?? [] : [],
   });
   const blank = (): Row => ({ uid: crypto.randomUUID(), key: "", label: "", type: "text", preset: "text", required: false,
     options: "", multiple: false, allowCustom: false, isNew: true, touched: false,
-    maxSize: null, format: "keep", quality: null, strip: true, target: "", libOnly: false, library: "", imageComponent: "", autoSet: "", folder: "", keepName: false, publishAs: "object", blocks: [], templates: [] });
+    maxSize: null, format: "keep", quality: null, strip: true, target: "", libOnly: false, library: "", imageComponent: "", casing: "", autoSet: "", folder: "", keepName: false, publishAs: "object", blocks: [], templates: [] });
 
   const toField = (r: Row) => ({
     key: r.key, label: r.label, type: r.type,
@@ -67,6 +69,7 @@
       ...(r.folder.trim() ? { folder: r.folder.trim(), ...(r.keepName ? { keepName: true } : {}) } : {}), ...(r.publishAs === "path" ? { publishAs: "path" } : {}),
     } : {}),
     ...(r.type === "datetime" && r.autoSet ? { autoSet: r.autoSet } : {}),
+    ...((r.type === "text" || r.type === "textarea" || r.type === "richtext") && r.casing ? { casing: r.casing } : {}),
     ...(r.type === "reference" ? { collection: r.target, multiple: r.multiple } : {}),
     ...(r.type === "richtext" && r.library ? { imageLibrary: r.library } : {}),
     ...(r.type === "richtext" && r.library && r.imageComponent.trim() ? { imageComponent: r.imageComponent.trim() } : {}),
@@ -291,6 +294,15 @@
             <label class="check"><input type="checkbox" bind:checked={row.multiple} disabled={!row.isNew} />Allow multiple</label>
             <label class="check"><input type="checkbox" bind:checked={row.allowCustom} />Allow new values (tags)</label>
           </div>
+        {/if}
+        {#if row.type === "text" || row.type === "textarea" || row.type === "richtext"}
+          <label>{row.type === "richtext" ? "Capitalise headings" : "Capitalise"}
+            <select bind:value={row.casing}>
+              <option value="">Never (leave as typed)</option>
+              <option value="words">Every word: The Dream And The Work</option>
+              <option value="title">Title case: The Dream and the Work</option>
+            </select>
+          </label>
         {/if}
         <div class="inline">
           {#if canRequire(row)}<label class="check"><input type="checkbox" bind:checked={row.required} />Required</label>{/if}

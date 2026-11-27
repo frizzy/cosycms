@@ -402,3 +402,5 @@ table.list thead th { position:sticky; top:var(--stick, 0px); z-index:5; backgro
   .navhead { font-family:var(--mono); font-weight:700; } .titlebar .icon-btn { margin-left:.5rem; }
 }
 table.list th.c-updated, table.list td.c-updated { text-align:right; }
+.cd-note { margin:0 0 .8rem; padding:.45rem .7rem; background:var(--accent-soft); color:var(--accent-text); border-radius:var(--radius); font-size:.9rem; }
+.chg h3 .cd-opt { display:inline-flex; margin-left:.8rem; font-weight:400; font-size:.85rem; }

@@ -1,7 +1,7 @@
 <script lang="ts" module>
   import type { Change } from "../src/diff";
   // What the dialog shows: a review before an action (confirm or cancel), a working state, and the result (back to the list or keep editing).
-  export type ChangeView = { stage: "review" | "working" | "done"; title: string; status: string; changes: Change[]; confirm?: string; error?: string; empty?: string };
+  export type ChangeView = { stage: "review" | "working" | "done"; title: string; status: string; changes: Change[]; confirm?: string; error?: string; empty?: string; note?: string; optional?: string[]; skip?: string[] }; // optional: change keys the person can switch off; skip: the ones switched off
 </script>
 
 <script lang="ts">
@@ -16,13 +16,14 @@
   <dialog bind:this={dlg} use:portal aria-labelledby="cd-title" oncancel={(e) => { e.preventDefault(); if (view.stage !== "working") onclose(); }}>
     <header><h1 id="cd-title">{view.title}</h1></header>
     <p class="cd-status">{view.status}</p>
+    {#if view.note}<p class="cd-note">{view.note}</p>{/if}
     {#if view.error}<p class="error">{view.error}</p>{/if}
     {#if n}
       <h2 class="cd-h">{n} change{n === 1 ? "" : "s"}</h2>
       <div class="changes">
         {#each view.changes as c (c.key)}
           <section class="chg">
-            <h3>{c.label}</h3>
+            <h3>{c.label}{#if view.optional?.includes(c.key)}<label class="check cd-opt"><input type="checkbox" checked={!view.skip?.includes(c.key)} onchange={(e) => { const on = e.currentTarget.checked, rest = (view.skip ?? []).filter((k) => k !== c.key); view.skip = on ? rest : [...rest, c.key]; }} />Capitalise</label>{/if}</h3>
             {#if c.kind === "value"}
               <div class="del">{c.before}</div><div class="add">{c.after}</div>
             {:else if c.kind === "list"}

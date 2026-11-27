@@ -18,6 +18,7 @@ export const entries = sqliteTable("entries", {
   publishAt: integer({ mode: "timestamp_ms" }),
   publishedAt: integer({ mode: "timestamp_ms" }), // the first time it went live
   revisedAt: integer({ mode: "timestamp_ms" }),   // the latest publish
+  keepCase: text({ mode: "json" }).$type<Record<string, string[]> | null>(), // per field, the text pieces the person opted out of automatic capitalisation for (matched by their text as typed)
 }, (t) => [uniqueIndex("entries_path").on(t.collection, t.slug), index("entries_status").on(t.status)]);
 
 // Per-target publish state: lets publishes be incremental and detects out-of-band edits later.

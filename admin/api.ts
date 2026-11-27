@@ -9,12 +9,13 @@ export type Entry = {
   id: string; collection: string; slug: string;
   published: boolean; pending: boolean; // has a published version; the draft differs from it
   data: Record<string, unknown>; updatedAt: string;
+  keepCase?: Record<string, string[]> | null; // text the person chose not to auto-capitalise (see src/casing.ts)
   live?: { slug: string; data: Record<string, unknown> } | null; // single-entry reads only: the published version
   publishAt?: string | null; publishedAt?: string | null; revisedAt?: string | null; // go-live time; first and latest publish
   schedule?: { at: string; failed: boolean; error?: string }; // goes live at `at` (ISO); `failed` once its attempts ran out
   thumb?: string; // list view only: storage key of the thumbnail image, when the collection has a thumbnail field
 };
-export type EntryInput = Pick<Entry, "collection" | "slug" | "data" | "publishAt">;
+export type EntryInput = Pick<Entry, "collection" | "slug" | "data" | "publishAt"> & { keepCase?: Record<string, string[]> };
 
 // The store sets this so a signed-out API call sends the user to the login screen.
 export const hooks = { unauthorized: () => {} };

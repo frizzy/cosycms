@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { capitalise, capitaliseHeadings } from "./casing.ts";
 import { IMAGE_TYPES, KEY_RE, MAX_IMAGE_BYTES, type ImageMime } from "./images.ts";
 
 // Field and collection definitions. Shared by the API (validation) and the admin (forms + builder).
@@ -15,7 +16,8 @@ export function folderError(folder: string, placeholders: boolean) {
 }
 
 export const FieldDef = z.discriminatedUnion("type", [
-  z.object({ ...common, type: z.enum(["text", "textarea", "number", "boolean", "date", "url"]) }),
+  z.object({ ...common, type: z.enum(["number", "boolean", "date", "url"]) }),
+  z.object({ ...common, type: z.enum(["text", "textarea"]), casing: z.enum(["words", "title"]).optional() }), // capitalise on save: every word, or title case with small words lowercase
   z.object({
     ...common, type: z.literal("datetime"), // stored as a UTC ISO string, e.g. 2026-11-19T15:00:04.305Z
     autoSet: z.enum(["create", "save"]).optional(), // fill in the time when the entry is created / on every save
@@ -37,6 +39,7 @@ export const FieldDef = z.discriminatedUnion("type", [
     imageComponent: z.string().regex(/^[A-Z][A-Za-z0-9]*$/, "a component name such as Image").optional(), // MDX: images given an alignment or size publish as <Name src alt align size />
     blocks: z.array(z.string()).optional(), // keys of the content blocks (see blocks.ts) this field may contain
     templates: z.array(z.string()).optional(), // keys of the templates (see templates.ts) that can start this field
+    casing: z.enum(["words", "title"]).optional(), // capitalise the headings on save
   }),
   z.object({
     ...common, type: z.literal("file"),
@@ -134,9 +137,9 @@ export function nextFreeSlug(slug: string, taken: Iterable<string>) {
   for (let n = m ? Number(m[1]) + 1 : 2; ; n++) if (!used.has(`${base}-${n}`)) return `${base}-${n}`;
 }
 
-function fieldSchema(f: Field): z.ZodType {
+function fieldSchema(f: Field, keep: string[] = []): z.ZodType {
   switch (f.type) {
-    case "text": case "textarea": return f.required ? z.string().min(1) : z.string();
+    case "text": case "textarea": { const t = f.required ? z.string().min(1) : z.string(); return f.casing ? t.transform((v) => (keep.includes(v) ? v : capitalise(v, f.casing!))) : t; }
     case "number": return z.number();
     case "boolean": return z.boolean();
     case "date": return z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "use YYYY-MM-DD");
@@ -152,7 +155,7 @@ function fieldSchema(f: Field): z.ZodType {
       mime: z.enum(Object.keys(IMAGE_TYPES) as [ImageMime, ...ImageMime[]]),
       width: z.number().int().positive().optional(), height: z.number().int().positive().optional(),
     });
-    case "richtext": return z.looseObject({ type: z.literal("doc") }); // Tiptap/ProseMirror JSON
+    case "richtext": { const d = z.looseObject({ type: z.literal("doc") }); return f.casing ? d.transform((v) => capitaliseHeadings(v, f.casing!, keep)) : d; } // Tiptap/ProseMirror JSON
     case "select": {
       const item = f.allowCustom ? z.string().min(1) : f.options.length ? z.enum(f.options as [string, ...string[]]) : z.never();
       return f.multiple ? (f.required ? z.array(item).min(1) : z.array(item)) : item;
@@ -160,10 +163,10 @@ function fieldSchema(f: Field): z.ZodType {
   }
 }
 
-/** Unknown keys (e.g. from removed fields) are stripped, not rejected. */
-export function dataSchema(c: { fields: Field[] }) {
+/** Unknown keys (e.g. from removed fields) are stripped, not rejected. `keepCase`: per field, the pieces of text (the value, or a heading) the person chose to leave as typed. */
+export function dataSchema(c: { fields: Field[] }, keepCase: Record<string, string[]> = {}) {
   return z.object(Object.fromEntries(c.fields.map((f) => {
-    const s = fieldSchema(f);
+    const s = fieldSchema(f, keepCase[f.key]);
     const mandatory = f.required && f.type !== "boolean" && f.type !== "richtext";
     return [f.key, mandatory ? s : s.optional()];
   })));
