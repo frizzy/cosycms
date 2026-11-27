@@ -169,10 +169,21 @@
     else { bubble = null; dwell = setTimeout(() => (bubble = b), 600); }
     return f;
   }
-  // A press scrolls smoothly, so the content above the list is seen leaving instead of vanishing; once dragging, it follows the pointer at once.
+  // Grabbing the handle changes nothing; dragging it scrolls by how far the pointer moved, in step with it. Pressing the empty track jumps there (smoothly).
+  let handleEl = $state<HTMLElement>(), grab: { y: number; scroll: number } | null = null, lastY = 0;
   function press(e: PointerEvent) {
-    dragging = true; track?.setPointerCapture(e.pointerId);
-    jump(point(e), true);
+    const h = handleEl?.getBoundingClientRect();
+    if (h && e.clientY >= h.top - 3 && e.clientY <= h.bottom + 3) { dragging = true; track?.setPointerCapture(e.pointerId); grab = { y: e.clientY, scroll: scrollY }; lastY = e.clientY; }
+    else jump(point(e), true);
+  }
+  function drag(y: number) {
+    if (!grab || !listEl || !rows?.length || !pos.height) return;
+    lastY = y;
+    const r = listEl.getBoundingClientRect(), head = listEl.querySelector("thead")?.getBoundingClientRect().height ?? 0;
+    const want = grab.scroll + (y - grab.y) * (((r.height - head) / rows.length) * total / pos.height); // the track stands for every entry, so a pixel of it is many pixels of list
+    scrollTo({ top: want, behavior: "instant" });
+    // Dragged past what is loaded: load on, then carry on from where the pointer is.
+    if (scrollY < want - 2 && rows.length < total && !loadingMore) { const n = rows.length; loadMore(n + BATCH).then(() => { if (dragging && rows && rows.length > n) drag(lastY); }); }
   }
   async function jump(f: number, smooth = false) {
     const start = Math.round(Math.min(Math.max(0, f - vis.size / 2), 1 - vis.size) * total);
@@ -291,10 +302,10 @@
 {#if showTrack}
   <div class="scrub" class:drag={dragging} role="presentation" bind:this={track} style="top:{pos.top}px;height:{pos.height}px;left:{pos.left}px"
     onpointerdown={press}
-    onpointermove={(e) => { const f = point(e); if (dragging) jump(f); }}
-    onpointerup={() => { dragging = false; bubble = null; }} onpointercancel={() => { dragging = false; bubble = null; }} onpointerleave={() => { clearTimeout(dwell); if (!dragging) bubble = null; }}>
+    onpointermove={(e) => { point(e); if (dragging) drag(e.clientY); }}
+    onpointerup={() => { dragging = false; grab = null; bubble = null; }} onpointercancel={() => { dragging = false; grab = null; bubble = null; }} onpointerleave={() => { clearTimeout(dwell); if (!dragging) bubble = null; }}>
     <div class="scrub-loaded" style="height:{(rows ? rows.length / total : 0) * 100}%"></div>
-    <div class="scrub-handle" style="top:{vis.top * 100}%;height:{vis.size * 100}%"></div>
+    <div class="scrub-handle" bind:this={handleEl} style="top:{vis.top * 100}%;height:{vis.size * 100}%"></div>
     {#if bubble}<div class="scrub-bubble" style="top:{bubble.y}px">{bubble.text}</div>{/if}
   </div>
 {/if}
