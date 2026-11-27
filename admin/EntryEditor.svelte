@@ -11,6 +11,7 @@
   import { toast } from "./toast.svelte";
   import { saveShortcut } from "./keys";
   import FieldInput from "./FieldInput.svelte";
+  import GearIcon from "./GearIcon.svelte";
   import PreviewDialog from "./PreviewDialog.svelte";
   import LiveIcon from "./LiveIcon.svelte";
   import { isEmpty } from "./util";
@@ -248,7 +249,7 @@
 </script>
 
 {#snippet state()}{#if id && !loading}<span class="livestate" class:edited={pending || dirty}>{#if published}<LiveIcon />{pending || dirty ? "Published · draft has changes" : "Published"}{:else}Draft{/if}</span>{/if}{/snippet}
-<div class="crumbs"><span class="muted">{c.label}</span>{@render state()}<span class="spacer"></span>{#if id}<a href="#/activity/{id}">History</a>{/if}{#if !c.single}<a href="#/{collection}">← Back</a>{/if}</div>
+<div class="crumbs"><span class="muted">{c.label}</span>{@render state()}<span class="spacer"></span>{#if id}<a href="#/activity/{id}">History</a>{/if}{#if store.me?.role === "owner"}<a class="icon-btn quiet" href="#/collections/{collection}" aria-label="Collection settings" title="Collection settings"><GearIcon /></a>{/if}{#if !c.single}<a href="#/{collection}">← Back</a>{/if}</div>
 {#if sched}
   <p class="notice sched" class:failed={sched.failed}>
     {#if sched.failed}<strong>Scheduled publish failed.</strong> {sched.error} Fix it and save to try again.
@@ -278,7 +279,9 @@
     {#if c.dates}
       <FieldInput field={GO_LIVE} bind:value={publishAt} locked={published ? "Locked while published. Unpublish to change it." : ""} />
       <FieldInput field={TAKE_DOWN} bind:value={unpublishAt} />
-      {#if unpublishAt && Date.parse(unpublishAt) > Date.now()}<small class="muted">{published || publishAt ? "It comes off the site and deploys then; the draft stays." : "Once published, it comes off the site and deploys then; the draft stays."}</small>{:else if !unpublishAt}<small class="muted">Optional. Set a time to have it taken off the site and deployed then.</small>{/if}
+      {#if unpublishAt && Date.parse(unpublishAt) <= Date.now()}<small class="error">That time has passed, so nothing will happen. Pick a later time, or clear it.</small>
+      {:else if unpublishAt}<small class="muted">{published || publishAt ? "It comes off the site and deploys then; the draft stays." : "Once published, it comes off the site and deploys then; the draft stays."}</small>{:else if !unpublishAt}<small class="muted">Optional. Set a time to have it taken off the site and deployed then.</small>{/if}
+      {#if !published && publishAt && Date.parse(publishAt) <= Date.now()}<small class="error">That time has passed, so it won't be scheduled. Pick a later time, or clear it.</small>{/if}
       {#if !published && !publishAt}<small class="muted">Optional. Set a future time and Save and schedule to have it published and deployed then.</small>{/if}
       {#if publishedAt}<small class="muted">First published {new Date(publishedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}{revisedAt && revisedAt !== publishedAt ? `, last revised ${new Date(revisedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}` : ""}.</small>{/if}
     {/if}

@@ -105,7 +105,7 @@ export const api = {
   ci: (sha: string) => call<{ state: "none" | "running" | "success" | "failed"; runs: { name: string; state: "running" | "success" | "failed"; url: string }[] }>(`/ci?sha=${sha}`),
   publish: () => call<{ changed: number; ref?: string; warnings?: string[]; remaining?: number }>("/publish", { method: "POST" }),
   counts: () => call<Counts>("/entries/counts"),
-  activity: (o: { entry?: string; offset?: number } = {}) => call<{ items: Activity[]; total: number }>(`/activity?limit=50&offset=${o.offset ?? 0}${o.entry ? `&entry=${encodeURIComponent(o.entry)}` : ""}`),
+  activity: (o: { entry?: string; offset?: number; scheduled?: boolean; limit?: number } = {}) => call<{ items: Activity[]; total: number }>(`/activity?limit=${o.limit ?? 50}&offset=${o.offset ?? 0}${o.scheduled ? "&scheduled=1" : ""}${o.entry ? `&entry=${encodeURIComponent(o.entry)}` : ""}`),
   trash: () => call<{ items: Trashed[]; days: number }>("/trash"),
   activityChanges: (id: string) => call<{ changes: Change[]; slug: { from: string; to: string } | null; gone: boolean }>(`/activity/${id}/changes`),
   historySettings: () => call<{ keep: number; trashDays: number }>("/settings/history"),

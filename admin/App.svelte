@@ -28,6 +28,11 @@
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import { ask } from "./confirm.svelte";
   import ThemeToggle from "./ThemeToggle.svelte";
+  import SchedulePage from "./SchedulePage.svelte";
+  import ClockIcon from "./ClockIcon.svelte";
+  import UserIcon from "./UserIcon.svelte";
+  import BackIcon from "./BackIcon.svelte";
+  import { settingsTabs } from "./settingsTabs";
   import GearIcon from "./GearIcon.svelte";
   import LogoutIcon from "./LogoutIcon.svelte";
   import PlusIcon from "./PlusIcon.svelte";
@@ -73,46 +78,66 @@
   const [a, b] = $derived(hash.replace(/^#\/?/, "").split("/"));
   const col = $derived(store.collections.find((c) => c.key === a));
 
+  let acctOpen = $state(false), acctEl = $state<HTMLElement>();
   let deploy: DeployDialog, palette: Palette;
   const modKey = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘K" : "Ctrl K";
 </script>
 
-<svelte:window onkeydown={(e) => { if (e.key === "Escape") menuOpen = false; if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && store.me) { e.preventDefault(); palette.show(); } }} />
+<svelte:window onpointerdown={(e) => { if (acctOpen && acctEl && !acctEl.contains(e.target as Node)) acctOpen = false; }} onkeydown={(e) => { if (e.key === "Escape") { menuOpen = false; acctOpen = false; } if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && store.me) { e.preventDefault(); palette.show(); } }} />
 {#if store.me === undefined}
   <div class="stack" aria-busy="true" aria-label="Loading"><div class="skel" style="height:40px"></div></div>
 {:else if !store.me}
   <Login />
 {:else}
+<div class="topbar">
+  <a href="#/" class="brand" aria-label="Home"><Logo /></a>
+  <button type="button" class="tb-search" onclick={() => palette.show()} aria-label="Search" title="Search everything"><SearchIcon /><span>Search</span><kbd>{modKey}</kbd></button>
+  <span class="spacer"></span>
+  <button class="publish" onclick={() => deploy.open()} title="Build what is published and send it to the site">Deploy</button>
+  <a href="#/notifications" class="icon-btn quiet tb-bell" class:on={a === "notifications"} aria-label="Notifications{store.unread ? `, ${store.unread} unread` : ""}" title="Notifications"><BellIcon />{#if store.unread}<span class="tb-badge">{store.unread > 9 ? "9+" : store.unread}</span>{/if}</a>
+  <ThemeToggle />
+  <div class="acct" bind:this={acctEl}>
+    <button type="button" class="icon-btn quiet" aria-label="Account" aria-haspopup="menu" aria-expanded={acctOpen} title={store.me.email} onclick={() => (acctOpen = !acctOpen)}><UserIcon /></button>
+    {#if acctOpen}
+      <div class="tb-pop" role="menu" onclick={() => (acctOpen = false)} onkeydown={() => {}} tabindex="-1">
+        <div class="who"><strong>{store.me.email}</strong><span class="muted">{owner ? "Owner" : "Member"}</span></div>
+        <a href="#/settings" class="navrow" role="menuitem"><GearIcon />Settings</a>
+        <button type="button" class="navrow" role="menuitem" onclick={signOut}><LogoutIcon />Sign out</button>
+      </div>
+    {/if}
+  </div>
+  <button type="button" class="icon-btn burger" aria-label={menuOpen ? "Close menu" : "Menu"} aria-expanded={menuOpen} aria-controls="menu" onclick={() => (menuOpen = !menuOpen)}>
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true">
+      {#if menuOpen}<path d="M6 6l12 12M18 6 6 18" />{:else}<path d="M4 7h16M4 12h16M4 17h16" />{/if}
+    </svg>
+  </button>
+</div>
 <div class="layout">
-  <nav>
-    <div class="bar">
-      <strong><a href="#/" class="brand" aria-label="Home"><Logo /></a></strong>
-      <button class="publish" onclick={() => deploy.open()} title="Build what is published and send it to the site">Deploy</button>
-      <button type="button" class="icon-btn burger" aria-label={menuOpen ? "Close menu" : "Menu"} aria-expanded={menuOpen} aria-controls="menu" onclick={() => (menuOpen = !menuOpen)}>
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true">
-          {#if menuOpen}<path d="M6 6l12 12M18 6 6 18" />{:else}<path d="M4 7h16M4 12h16M4 17h16" />{/if}
-        </svg>
-      </button>
-    </div>
-    <div class="menu" id="menu" class:open={menuOpen} onclick={(e) => { if ((e.target as Element).closest("a")) menuOpen = false; }} role="presentation">
-      <button type="button" class="navrow find" onclick={() => { menuOpen = false; palette.show(); }}><SearchIcon />Search<kbd>{modKey}</kbd></button>
-      <div class="navhead"><span>Collections</span>{#if owner}<a href="#/collections/new" class="icon-btn" aria-label="New collection" title="New collection"><PlusIcon /></a>{/if}</div>
-      {#each store.collections as c (c.key)}
-        {@const n = (store.counts[c.key]?.drafts ?? 0) + (store.counts[c.key]?.edited ?? 0)}
+  <nav class:open={menuOpen}>
+    <div class="menu" id="menu" onclick={(e) => { if ((e.target as Element).closest("a")) menuOpen = false; }} role="presentation">
+      {#if a === "settings"}
+        <a href="#/" class="navrow"><BackIcon />Back to content</a>
+        <div class="navhead"><span>Settings</span></div>
+        {#each settingsTabs(owner) as t (t.id)}
+          <a href="#/settings/{t.id}" class:active={t.id === (b ?? settingsTabs(owner)[0].id)}>{t.label}{#if t.id === "signin" && owner && store.signIn === 0} <span class="dot" title="Needs setup"></span>{/if}</a>
+        {/each}
+      {:else}
+        <div class="navhead"><span>Collections</span>{#if owner}<a href="#/collections/new" class="icon-btn" aria-label="New collection" title="New collection"><PlusIcon /></a>{/if}</div>
+        {#each store.collections as c (c.key)}
+          {@const n = (store.counts[c.key]?.drafts ?? 0) + (store.counts[c.key]?.edited ?? 0)}
         <a href="#/{c.key}" class:active={c.key === a}>{c.label}{#if n}<span class="badge" title="{store.counts[c.key].drafts} draft{store.counts[c.key].drafts === 1 ? "" : "s"}, {store.counts[c.key].edited} edited">{n}</span>{/if}</a>
-      {/each}
-      <a href="#/notifications" class="navrow settings" class:active={a === "notifications"}><BellIcon />Notifications{#if store.unread}<span class="badge" title="{store.unread} unread">{store.unread}</span>{/if}</a>
-      <a href="#/activity" class="navrow" class:active={a === "activity"}><ActivityIcon />Activity</a>
-      <a href="#/trash" class="navrow" class:active={a === "trash"}><TrashIcon />Trash</a>
-      {#if owner}<a href="#/blocks" class="navrow" class:active={a === "blocks"}><BlocksIcon />Blocks</a>{/if}
-      {#if owner}<a href="#/templates" class="navrow" class:active={a === "templates"}><TemplatesIcon />Templates</a>{/if}
-      <a href="#/settings" class="navrow" class:active={a === "settings"}><GearIcon />Settings</a>
-      <ThemeToggle label />
-      <button type="button" class="navrow" onclick={signOut}><LogoutIcon />Sign out</button>
+        {/each}
+        <div class="navgap"></div>
+        <a href="#/schedule" class="navrow" class:active={a === "schedule"}><ClockIcon size={18} />Schedule</a>
+        <a href="#/activity" class="navrow" class:active={a === "activity"}><ActivityIcon />Activity</a>
+        <a href="#/trash" class="navrow" class:active={a === "trash"}><TrashIcon />Trash</a>
+        {#if owner}<a href="#/blocks" class="navrow" class:active={a === "blocks"}><BlocksIcon />Blocks</a>{/if}
+        {#if owner}<a href="#/templates" class="navrow" class:active={a === "templates"}><TemplatesIcon />Templates</a>{/if}
+      {/if}
     </div>
   </nav>
   <main class:wide={(!!col && !b) || a === "blocks" || a === "templates"}>
-    {#if store.me?.role === "owner" && store.signIn === 0 && a !== "settings"}
+    {#if store.me?.role === "owner" && store.signIn === 0 && !a}
       <p class="notice">Finish setting up: <a href="#/settings/signin">add a way to sign in with GitHub or Google</a>.</p>
     {/if}
     {#if !store.loaded}
@@ -124,6 +149,8 @@
       <p class="muted">Only an owner can change collections, blocks and templates.</p>
     {:else if a === "notifications"}
       <NotificationsPage />
+    {:else if a === "schedule"}
+      <SchedulePage />
     {:else if a === "trash"}
       <TrashPage />
     {:else if a === "activity"}

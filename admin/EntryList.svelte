@@ -133,8 +133,8 @@
   let vis = $state({ top: 0, size: 1 });
   const stick = $derived(navH + headH);
   $effect(() => {
-    const nav = document.querySelector("nav"), mq = matchMedia("(max-width:760px)");
-    const m = () => { navH = mq.matches && nav ? nav.getBoundingClientRect().height : 0; headH = headEl?.getBoundingClientRect().height ?? 0; };
+    const nav = document.querySelector(".topbar");
+    const m = () => { navH = nav ? nav.getBoundingClientRect().height : 0; headH = headEl?.getBoundingClientRect().height ?? 0; };
     m();
     const ro = new ResizeObserver(m);
     if (nav) ro.observe(nav);
@@ -166,8 +166,11 @@
 </script>
 
 <header>
-  <span class="titlebar"><h1>{col.label}</h1>{#if store.me?.role === "owner"}<a class="icon-btn quiet" href="#/collections/{col.key}" aria-label="Collection settings" title="Collection settings"><GearIcon /></a>{/if}</span>
-  {#if !(col.single && total)}<a class="icon-btn" href="#/{collection}/new" aria-label="New entry" title="New entry"><PlusIcon /></a>{/if}
+  <h1>{col.label}</h1>
+  <span class="tools">
+    {#if store.me?.role === "owner"}<a class="icon-btn quiet" href="#/collections/{col.key}" aria-label="Collection settings" title="Collection settings"><GearIcon /></a>{/if}
+    {#if !(col.single && total)}<a class="icon-btn" href="#/{collection}/new" aria-label="New entry" title="New entry"><PlusIcon /></a>{/if}
+  </span>
 </header>
 
 <div class="listhead" style="top:{navH}px" bind:this={headEl}>

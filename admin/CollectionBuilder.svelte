@@ -147,7 +147,7 @@
 {#if ckey && !existing}
   <p class="error">No such collection.</p>
 {:else}
-  <header><h1>{existing ? `Fields · ${existing.label}` : "New collection"}</h1>{#if existing}<a href="#/{existing.key}">← Back</a>{/if}</header>
+  <header><h1>{existing ? existing.label : "New collection"}</h1>{#if existing}<a href="#/{existing.key}">← Back</a>{/if}</header>
   <form onsubmit={save} use:saveShortcut>
     {#if !existing && !rows.length}
       <p class="muted">Building a media library? <button type="button" class="link" onclick={useLibraryTemplate}>Start from an image library</button></p>

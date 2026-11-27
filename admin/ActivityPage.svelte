@@ -1,7 +1,6 @@
 <script lang="ts">
   import { api, type Activity } from "./api";
   import { refreshCounts, store } from "./store.svelte";
-  import ClockIcon from "./ClockIcon.svelte";
   import { toast } from "./toast.svelte";
   import { ask } from "./confirm.svelte";
   import ChangeDialog, { type ChangeView } from "./ChangeDialog.svelte";
@@ -15,8 +14,6 @@
     "provider.save": "set up sign-in with", "provider.remove": "removed sign-in with",
     "person.invite": "invited", "person.role": "changed the role of", "person.remove": "removed",
   };
-  let queued = $state<Awaited<ReturnType<typeof api.schedule>>>([]);
-  $effect(() => { if (!entry && store.me?.role === "owner") api.schedule().then((r) => (queued = r), () => {}); });
   let items = $state<Activity[]>([]), total = $state(0), loading = $state(true), error = $state("");
   async function load(more = false) {
     try {
@@ -48,18 +45,6 @@
 </script>
 
 <header><h1>Activity</h1>{#if entry}<a href="#/activity">All activity</a>{/if}</header>
-{#if queued.length}
-  <section class="queued">
-    <h2>Scheduled</h2>
-    <ul>
-      {#each queued as j}
-        <li class:failed={j.status === "failed"}><ClockIcon /> {new Date(j.at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
-          {j.kind === "deploy.run" ? "Deploy to the site" : "Publish"}{#if j.entry} <a href="#/{j.entry.collection}/{j.entry.id}">{j.entry.label}</a>{/if}
-          {#if j.status === "failed"}<span class="error">· failed: {j.error}</span>{:else if j.error}<span class="muted">· retrying: {j.error}</span>{/if}</li>
-      {/each}
-    </ul>
-  </section>
-{/if}
 {#if error}<p class="error">{error}</p>
 {:else if loading}<p class="muted" aria-busy="true">Loading…</p>
 {:else if !items.length}<p class="muted">Nothing has happened yet.</p>

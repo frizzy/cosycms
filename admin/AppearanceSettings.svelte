@@ -9,7 +9,6 @@
 </script>
 
 <section class="stack">
-  <h2>Appearance</h2>
   <label class="inline"><input type="checkbox" checked={retro} onchange={(e) => set(e.currentTarget.checked)} /> Retro controls</label>
   <p class="muted">Flat, square checkboxes, bulk bar and date picker with a hard edge and a monospace label. Turn off for the standard rounded look. This is remembered in this browser only.</p>
 </section>

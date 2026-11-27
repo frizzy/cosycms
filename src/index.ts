@@ -372,7 +372,7 @@ app.get("/entries/counts", async (c) => {
 // The history: newest first, everyone signed in can read it. ?entry=<id> narrows it to one entry.
 app.get("/activity", async (c) => {
   const entry = c.req.query("entry"), limit = Math.min(Math.max(parseInt(c.req.query("limit") ?? "") || 50, 1), 100), offset = Math.max(parseInt(c.req.query("offset") ?? "") || 0, 0);
-  const where = entry ? eq(activity.entryId, entry) : undefined;
+  const where = entry ? eq(activity.entryId, entry) : c.req.query("scheduled") ? like(activity.detail, "%(scheduled)%") : undefined; // scheduled: only what the scheduler did
   const [{ total }] = await db(c).select({ total: count() }).from(activity).where(where);
   const { before, ...cols } = getTableColumns(activity); // the saved copies stay on the server
   return c.json({ items: await db(c).select({ ...cols, undoable: sql<number>`${activity.before} is not null` }).from(activity).where(where).orderBy(desc(activity.at), desc(activity.id)).limit(limit).offset(offset), total });
@@ -777,8 +777,10 @@ export async function tick(env: Env["Bindings"]) {
 }
 
 // Jobs that are waiting or failed, for the Activity page.
-app.get("/schedule", ownerOnly, async (c) => {
-  const jobs = await db(c).select().from(schedule).where(ne(schedule.status, "done")).orderBy(schedule.runAt).limit(100);
+// Everyone can see what is coming for entries; the system's own jobs (deploys, checks) are for owners.
+app.get("/schedule", async (c) => {
+  const owner = c.get("user").role === "owner";
+  const jobs = await db(c).select().from(schedule).where(and(ne(schedule.status, "done"), owner ? undefined : like(schedule.kind, "entry.%"))).orderBy(schedule.runAt).limit(100);
   const rows = await db(c).select({ id: entries.id, collection: entries.collection, slug: entries.slug, data: entries.data }).from(entries).where(inArray(entries.id, jobs.map((j) => j.ref)));
   const by = new Map(rows.map((r) => [r.id, r]));
   return c.json(await Promise.all(jobs.map(async (j) => { const e = by.get(j.ref); return { kind: j.kind, at: j.runAt.toISOString(), status: j.status, error: j.error, entry: e && { id: e.id, collection: e.collection, label: await labelOf(c, e) } }; })));

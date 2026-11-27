@@ -9,22 +9,15 @@
   import BackupSettings from "./BackupSettings.svelte";
   import HistorySettings from "./HistorySettings.svelte";
   import AppearanceSettings from "./AppearanceSettings.svelte";
+  import { settingsTabs } from "./settingsTabs";
 
   let { section }: { section?: string } = $props();
   const owner = $derived(store.me?.role === "owner");
-  // Everyone sees their own connected apps; the rest is the owner's.
-  const tabs = $derived([
-    ...(owner ? [{ id: "publishing", label: "Deploy" }, { id: "signin", label: "Sign-in" }, { id: "people", label: "People" }, { id: "notifications", label: "Notifications" }, { id: "history", label: "History" }, { id: "search", label: "Search" }, { id: "backups", label: "Backups" }] : []),
-    { id: "apps", label: "Connected apps" },
-    { id: "appearance", label: "Appearance" },
-  ]);
+  const tabs = $derived(settingsTabs(owner));
   const current = $derived(tabs.find((t) => t.id === section)?.id ?? tabs[0].id);
 </script>
 
-<header><h1>Settings</h1></header>
-<div class="tabs" role="navigation" aria-label="Settings sections">
-  {#each tabs as t (t.id)}<a href="#/settings/{t.id}" class:active={t.id === current} aria-current={t.id === current ? "page" : undefined}>{t.label}{#if t.id === "signin" && owner && store.signIn === 0} <span class="dot" title="Needs setup"></span>{/if}</a>{/each}
-</div>
+<header><h1>{tabs.find((t) => t.id === current)?.label}</h1></header>
 {#if current === "publishing"}<PublishSettings />
 {:else if current === "signin"}<SignInSettings />
 {:else if current === "people"}<PeopleSettings />
