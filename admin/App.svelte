@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api } from "./api";
-  import { store, refreshCollections, refreshCounts, refreshUnread } from "./store.svelte";
+  import { store, refreshCollections, refreshCounts, refreshUnread, refreshPeople } from "./store.svelte";
   import EntryList from "./EntryList.svelte";
   import EntryEditor from "./EntryEditor.svelte";
   import CollectionBuilder from "./CollectionBuilder.svelte";
@@ -55,7 +55,7 @@
         // Stay where we are while asking (the dialog can't block the navigation), then go on if the person agrees.
         const target = location.hash;
         reverting = true; location.hash = prev;
-        ask({ title: "Leave without saving?", message: "You have unsaved changes.", confirm: "Leave", cancel: "Keep editing", danger: true }).then((ok) => { if (ok) { store.dirty = false; location.hash = target; } });
+        ask({ title: "Leave without saving?", message: "You have unsaved changes.", confirm: "Leave", cancel: "Keep editing", danger: true }).then((ok) => { if (ok) { store.discardDraft?.(); store.dirty = false; location.hash = target; } });
         return;
       }
       prev = hash = location.hash;
@@ -66,7 +66,7 @@
     api.me().then((me) => (store.me = me));
     return () => removeEventListener("hashchange", on);
   });
-  $effect(() => { if (store.me) { refreshCollections(); refreshCounts(); refreshUnread(); } });
+  $effect(() => { if (store.me) { refreshCollections(); refreshCounts(); refreshUnread(); refreshPeople(); } });
   // Builds finish and jobs fail while nobody is looking: check for new notifications now and then.
   $effect(() => { if (!store.me) return; const t = setInterval(refreshUnread, 60_000); return () => clearInterval(t); });
   // Whether social sign-in is set up: until it is, the Sign-in section of Settings carries a red dot.

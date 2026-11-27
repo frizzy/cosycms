@@ -76,6 +76,7 @@ export const api = {
   disconnect: (id: string) => call<void>(`/connections/${id}`, { method: "DELETE" }),
   logout: () => call<void>("/logout", { method: "POST" }),
   mediaHealth: () => call<MediaHealth>("/media-health"),
+  directory: () => call<{ email: string; name: string | null; avatar: string | null }[]>("/directory"),
   saveProfile: (p: { name: string | null; avatar: string | null }) => call<Me>("/profile", { method: "PUT", body: JSON.stringify(p) }),
   upload: async (f: File) => {
     const res = await fetch(`/api/uploads?name=${encodeURIComponent(f.name)}`, { method: "PUT", body: f });

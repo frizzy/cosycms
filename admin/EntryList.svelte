@@ -4,7 +4,7 @@
   import { dataSchema, entryLabel } from "../src/fields";
   import { api, type Entry } from "./api";
   import { blobUrl } from "../src/images";
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import { refreshCounts, store } from "./store.svelte";
   import { toast } from "./toast.svelte";
   import { ask } from "./confirm.svelte";
@@ -96,9 +96,25 @@
       }
     } catch (e) { error = `${(e as Error).message}${done ? ` (${done} were done before that.)` : ""}`; }
     failed = bad; progress = "";
-    if (done) toast(`${verb[action]} ${done} ${done === 1 ? "entry" : "entries"}`);
+    const okIds = ids.filter((i) => !bad.some((b) => b.id === i));
+    const wasDraft = okIds.every((i) => rows?.some((r) => r.id === i && !r.published)); // for Publish: only a list of drafts has a clean way back
+    const back = done ? undo(action, okIds, wasDraft) : undefined;
+    if (done) toast(`${verb[action]} ${done} ${done === 1 ? "entry" : "entries"}`, "ok", back);
     reload++; refreshCounts();
     working = false;
+  }
+  // The way back from a bulk action, offered in the toast: bring deleted entries back from the Trash, publish what was unpublished, take down what was a draft before.
+  function undo(action: "publish" | "unpublish" | "delete", ids: string[], wasDraft: boolean) {
+    const n = `${ids.length} ${ids.length === 1 ? "entry" : "entries"}`;
+    if (action === "publish" && !wasDraft) return undefined;
+    return { label: "Undo", run: async () => {
+      if (action === "delete") {
+        const trashed = (await api.trash()).items.filter((t) => ids.includes(t.entryId));
+        for (const t of trashed) await api.undo(t.id);
+        toast(`Brought back ${trashed.length} ${trashed.length === 1 ? "entry" : "entries"}`);
+      } else { await api.bulk(ids, action === "unpublish" ? "publish" : "unpublish"); toast(action === "unpublish" ? `${n} published again` : `${n} back to drafts`); }
+      reload++; refreshCounts();
+    } };
   }
   // "Select all N matching": the ids behind the whole search and filter, not only the rows loaded so far.
   let progress = $state(""), pickedAll = $state(0); // pickedAll: how many the search matched when everything was selected (0 = not selecting everything)
@@ -111,7 +127,8 @@
   let first = true; // the first load is immediate and may restore a position; typing is debounced
   $effect(() => {
     query(); reload; filter; collection;
-    const keep = reload && rows ? rows.length : 0, was = first ? recall() : null;
+    const keep = reload ? untrack(() => rows?.length ?? 0) : 0, // untracked: this effect sets `rows`, so reading it here would make it rerun forever
+      was = first ? recall() : null;
     sel = []; pickedAll = 0; if (!reload) failed = [];
     let stale = false;
     const t = setTimeout(async () => {

@@ -151,3 +151,22 @@ test("only the tick token reaches the host endpoints, and an ssh destination rep
   assert.equal((await c.call("GET", "/backup/destination")).body.dest, null);
   assert.equal((await c.call("POST", "/backup/test")).status, 400, "nothing to test");
 });
+
+test("everyone signed in can read names and pictures, to see who did what", async () => {
+  const c = await setup();
+  await c.call("PUT", "/profile", { name: "Sam", avatar: "ghost" });
+  const list = (await c.call("GET", "/directory", undefined, c.member)).body as { email: string; name: string | null; avatar: string | null }[];
+  assert.deepEqual(list.find((p) => p.email === "owner@example.com"), { email: "owner@example.com", name: "Sam", avatar: "ghost" });
+  assert.ok(list.every((p) => !("role" in p) && !("passwordHash" in p)), "nothing beyond name and picture");
+});
+
+test("an entry deleted, brought back and deleted again is one item in the Trash, and undoing restores it once", async () => {
+  const c = await setup();
+  for (let i = 0; i < 3; i++) {
+    assert.equal((await c.call("DELETE", `/entries/${c.id}`)).status, 204);
+    const trash = (await c.call("GET", "/trash")).body.items as { id: string; entryId: string }[];
+    assert.deepEqual(trash.map((t) => t.entryId), [c.id], `round ${i + 1}: one row for the entry`);
+    assert.equal((await c.call("POST", `/activity/${trash[0].id}/undo`)).status, 200);
+    assert.equal((await c.call("GET", "/trash")).body.items.length, 0, "back, so nothing in the Trash");
+  }
+});

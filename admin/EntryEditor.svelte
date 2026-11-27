@@ -6,7 +6,8 @@
   import ClockIcon from "./ClockIcon.svelte";
   import ChangeDialog, { type ChangeView } from "./ChangeDialog.svelte";
   import { fieldChanges, type Change } from "../src/diff";
-  import { slugify, type Field } from "../src/fields";
+  import { entryLabel, slugify, type Field } from "../src/fields";
+  import { remember } from "./recent";
   import { store, refreshCounts } from "./store.svelte";
   import { toast } from "./toast.svelte";
   import { saveShortcut } from "./keys";
@@ -77,13 +78,36 @@
 
   // Unsaved-changes tracking. Empty values are normalised away so a form that merely rendered isn't "dirty".
   const present = (v: unknown) => !(v === "" || v == null || v === false || (Array.isArray(v) && !v.length) || (typeof v === "number" && Number.isNaN(v)));
-  const fingerprint = () => JSON.stringify([slug, publishAt ?? null, unpublishAt ?? null, Object.entries(data).filter(([, v]) => present(v)).sort(([x], [y]) => (x < y ? -1 : 1))]);
+  const fpOf = (s: string, up: string | null | undefined, down: string | null | undefined, d: Record<string, unknown>) => JSON.stringify([s, up ?? null, down ?? null, Object.entries(d).filter(([, v]) => present(v)).sort(([x], [y]) => (x < y ? -1 : 1))]);
+  const fingerprint = () => fpOf(slug, publishAt, unpublishAt, data);
   let baseline = $state<string>();
   const rebase = () => (baseline = fingerprint());
   // A draft with a future go-live time is scheduled when saved, and can't be published by hand until then.
   const later = $derived(!published && !!c.dates && Date.parse(String(publishAt ?? "")) > Date.now());
   const dirty = $derived(!loading && baseline !== undefined && fingerprint() !== baseline);
-  $effect(() => { if (!loading) tick().then(rebase); }); // after bindings and the editor have settled
+  let checked = false;
+  $effect(() => { if (!loading) tick().then(() => { rebase(); if (!checked) { checked = true; look(); } }); }); // after bindings and the editor have settled
+
+  // Unsaved work is also kept in this browser as you type, so a closed tab, a crash or a sleeping laptop doesn't lose it.
+  type Kept = { at: number; base: string; slug: string; data: Record<string, unknown>; publishAt: string | null; unpublishAt: string | null };
+  const draftKey = () => `cosy:draft:${collection}:${id ?? "new"}`; // the editor is remounted per entry, so these never change underneath it
+  let seenAt = $state(""), found = $state<Kept | null>(null); // seenAt: the entry's updatedAt when it was loaded, to tell whether it changed since
+  const dropDraft = () => { try { localStorage.removeItem(draftKey()); } catch { /* storage can be blocked */ } };
+  function look() {
+    try {
+      const d = JSON.parse(localStorage.getItem(draftKey()) ?? "null") as Kept | null;
+      if (d?.data && fpOf(d.slug, d.publishAt, d.unpublishAt, d.data) !== baseline) found = d; else if (d) dropDraft(); // identical to what is saved: nothing to recover
+    } catch { /* an unreadable draft is as good as none */ }
+  }
+  $effect(() => {
+    if (!dirty) return;
+    fingerprint(); // runs again on every edit
+    const t = setTimeout(() => { try { localStorage.setItem(draftKey(), JSON.stringify({ at: Date.now(), base: seenAt, slug, data: cleanData(), publishAt: publishAt ?? null, unpublishAt: unpublishAt ?? null } satisfies Kept)); } catch { /* full or blocked: the leave warning still protects */ } }, 600);
+    return () => clearTimeout(t);
+  });
+  $effect(() => { store.discardDraft = dropDraft; return () => { store.discardDraft = undefined; }; }); // "Leave without saving" means it
+  function restoreDraft() { const d = found!; slug = d.slug; data = d.data; publishAt = d.publishAt; unpublishAt = d.unpublishAt; rev++; found = null; }
+  const discardFound = () => { dropDraft(); found = null; };
   $effect(() => {
     store.dirty = dirty;
     if (!dirty) return;
@@ -96,12 +120,12 @@
   function adopt(e: Entry) {
     snap = { slug: e.slug, publishAt: e.publishAt ?? null, unpublishAt: e.unpublishAt ?? null, data: copy(e.data) };
     liveSnap = e.live ? { slug: e.live.slug, publishAt: null, data: copy(e.live.data) } : null;
-    kept = e.keepCase ?? {};
+    kept = e.keepCase ?? {}; seenAt = e.updatedAt;
     savedSlug = e.slug; ({ slug, data, published, pending, schedule: sched, publishAt, unpublishAt, publishedAt, revisedAt } = e);
   }
   $effect(() => {
     if (!id) return;
-    api.get(id).then((e) => { adopt(e); loading = false; }, (e) => { error = e.message; loading = false; });
+    api.get(id).then((e) => { adopt(e); remember({ collection, id: e.id, title: entryLabel(c.fields, e.data, e.slug, c.titleField) }); loading = false; }, (e) => { error = e.message; loading = false; });
   });
 
   // Where this entry is used (an image in a post, a link from another entry): shown below the form when there is anything.
@@ -118,7 +142,7 @@
     try {
       const body = { collection, slug, data: clean, ...(Object.keys(keepCase).length ? { keepCase } : {}), ...(c.dates ? { publishAt: publishAt || null, unpublishAt: unpublishAt || null } : {}) };
       let target = id, saved: Record<string, unknown> = {};
-      if (id) { const e = await api.update(id, body); saved = e.data; kept = e.keepCase ?? {}; ({ published, pending, schedule: sched, publishAt, unpublishAt, publishedAt, revisedAt } = e); }
+      if (id) { const e = await api.update(id, body); seenAt = e.updatedAt; saved = e.data; kept = e.keepCase ?? {}; ({ published, pending, schedule: sched, publishAt, unpublishAt, publishedAt, revisedAt } = e); }
       else { const e = await api.create(body); target = createdId = e.id; sched = e.schedule; saved = e.data; kept = e.keepCase ?? {}; }
       // Capitalisation is applied by the server; take its result, and remember which fields it touched.
       const fixed = c.fields.filter((f) => "casing" in f && f.casing && JSON.stringify(saved[f.key] ?? null) !== JSON.stringify(clean[f.key] ?? null));
@@ -127,7 +151,7 @@
       if (fixed.some((f) => f.type === "richtext")) rev++;
       refreshCounts();
       savedSlug = slug; if (source) locked = true;
-      rebase(); store.dirty = false; // clean first so the leave-guard stays quiet
+      rebase(); store.dirty = false; dropDraft(); found = null; // clean first so the leave-guard stays quiet
       snap = { slug, publishAt: publishAt ?? null, unpublishAt: unpublishAt ?? null, data: copy(clean) };
       saving = false;
       return target ?? null;
@@ -220,7 +244,7 @@
   }
   async function revert() {
     if (!id || !(await ask({ title: "Discard the draft changes?", message: "The draft goes back to the published version.", confirm: "Discard changes", danger: true }))) return;
-    try { await api.revertEntry(id); store.dirty = false; loading = true; const e = await api.get(id); adopt(e); loading = false; toast("Back to the published version"); refreshCounts(); }
+    try { await api.revertEntry(id); store.dirty = false; dropDraft(); found = null; loading = true; const e = await api.get(id); adopt(e); loading = false; toast("Back to the published version"); refreshCounts(); }
     catch (e) { error = (e as Error).message; loading = false; }
   }
 
@@ -243,8 +267,14 @@
     if (!id || !(await ask({ title: "Delete this entry?", message: "It moves to the Trash, where it can be restored for a while.", confirm: "Delete", danger: true }))) return;
     error = "";
     try { await api.remove(id); } catch (e) { error = (e as Error).message; return; } // e.g. still used by another entry
-    store.dirty = false;
-    toast("Deleted"); refreshCounts();
+    store.dirty = false; dropDraft();
+    const gone = id;
+    toast("Deleted", "ok", { label: "Undo", run: async () => {
+      const hit = (await api.trash()).items.find((t) => t.entryId === gone);
+      if (!hit) { toast("It is no longer in the Trash", "error"); return; }
+      await api.undo(hit.id); refreshCounts(); toast("Brought back"); location.hash = `#/${collection}/${gone}`;
+    } });
+    refreshCounts();
     location.hash = `#/${collection}`;
   }
 </script>
@@ -263,6 +293,12 @@
     {#each [40, 56, 56, 220] as h}<div class="skel" style="height:{h}px"></div>{/each}
   </div>
 {:else}
+  {#if found}
+    <div class="notice recover">
+      <p>Unsaved changes from {new Date(found.at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })} were found on this device{found.base !== seenAt ? ", but this entry has been saved since" : ""}.</p>
+      <div class="inline"><button type="button" onclick={restoreDraft}>Restore them</button><button type="button" class="ghost" onclick={discardFound}>Discard</button></div>
+    </div>
+  {/if}
   <form onsubmit={save} use:saveShortcut>
     <div class="field">Slug
       <div class="inline">

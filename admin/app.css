@@ -432,3 +432,6 @@ dialog.preview { width:min(46rem, 94vw); } .pv { display:grid; gap:1.4rem; } .pv
 .mh-alt > a { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; } .mh-alt .inline { flex-wrap:nowrap; gap:.5rem; }
 :root[data-style=retro] { .mh-pic img { border-radius:0; } }
 .dt-day:disabled { opacity:.35; cursor:default; } .dt-day:disabled:hover { background:transparent; border-color:transparent; }
+.actor { display:inline-flex; align-items:center; gap:.4rem; vertical-align:middle; } .actor .avatar { width:1.15rem; height:1.15rem; } .actor > small { font-weight:400; }
+.toast { display:flex; align-items:center; gap:.9rem; } .toast button { padding:.15rem .7rem; font-size:.85rem; }
+.recover { display:grid; gap:.6rem; } .recover p { margin:0; } .recover .inline { gap:.5rem; }

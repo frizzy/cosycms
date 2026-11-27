@@ -387,6 +387,10 @@ accountRoutes.post("/people", ownerOnly, async (c) => {
   return c.json({ id, invite: await inviteLink(c, id) }, 201);
 });
 
+// Names and pictures for showing who did something. Everyone signed in can read it: activity already shows each person's email.
+accountRoutes.get("/directory", async (c) =>
+  c.json((await db(c.env).select().from(users)).map((u) => ({ email: u.email, name: u.name, avatar: u.avatar }))));
+
 // Also the password reset: a fresh link lets them choose a new password.
 accountRoutes.post("/people/:id/invite", ownerOnly, async (c) =>
   (await userOf(c.env, c.req.param("id"))) ? c.json({ invite: await inviteLink(c, c.req.param("id")) }) : c.json({ error: "not found" }, 404));

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { AVATARS } from "../src/avatars";
   import { api } from "./api";
-  import { store } from "./store.svelte";
+  import { store, refreshPeople } from "./store.svelte";
   import { toast } from "./toast.svelte";
   import Avatar from "./Avatar.svelte";
 
@@ -27,7 +27,7 @@
   }
   async function save(ev: SubmitEvent) {
     ev.preventDefault(); error = ""; busy = true;
-    try { store.me = { ...store.me!, ...(await api.saveProfile({ name: name.trim() || null, avatar })) }; toast("Profile saved"); }
+    try { store.me = { ...store.me!, ...(await api.saveProfile({ name: name.trim() || null, avatar })) }; refreshPeople(); toast("Profile saved"); }
     catch (e) { error = (e as Error).message; }
     busy = false;
   }

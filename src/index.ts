@@ -669,7 +669,7 @@ app.delete("/entries/:id", async (c) => {
 app.get("/trash", async (c) => {
   const { trashDays } = await historyLimits(c.env.DB);
   await pruneHistory(c.env.DB);
-  const { results } = await c.env.DB.prepare("select a.id, a.at, a.actor, a.collection, a.label, a.entryId from activity a where a.action = 'entry.delete' and a.before is not null and not exists (select 1 from entries e where e.id = a.entryId) order by a.at desc limit 200").all();
+  const { results } = await c.env.DB.prepare("select a.id, a.at, a.actor, a.collection, a.label, a.entryId from activity a where a.action = 'entry.delete' and a.before is not null and not exists (select 1 from entries e where e.id = a.entryId) and a.id = (select b.id from activity b where b.entryId = a.entryId and b.action = 'entry.delete' and b.before is not null order by b.at desc, b.id desc limit 1) order by a.at desc limit 200").all();
   return c.json({ items: results, days: trashDays });
 });
 

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { api, type Activity } from "./api";
   import { refreshCounts, store } from "./store.svelte";
+  import { person } from "./people";
+  import Avatar from "./Avatar.svelte";
   import { toast } from "./toast.svelte";
   import { ask } from "./confirm.svelte";
   import ChangeDialog, { type ChangeView } from "./ChangeDialog.svelte";
@@ -51,10 +53,11 @@
 {:else}
   <ol class="activity">
     {#each items as a (a.id)}
+      {@const w = person(a.actor)}
       <li>
         <time datetime={a.at}>{when(a.at)}</time>
         <span class="what">
-          <strong>{a.actor}</strong>{#if a.via}{" "}<span class="muted">via {a.via}</span>{/if}{" "}
+          <span class="actor" title={a.actor}>{#if w.known}<Avatar avatar={w.avatar} size={18} />{/if}<strong>{w.name}</strong></span>{#if a.via}{" "}<span class="muted">via {a.via}</span>{/if}{" "}
           {PHRASE[a.action] ?? a.action}
           {#if a.label}{#if a.collection && a.entryId && a.action !== "entry.delete"}<a href="#/{a.collection}/{a.entryId}">{a.label}</a>{:else}<strong>{a.label}</strong>{/if}{/if}
           {#if a.detail}<span class="muted">· {a.detail}</span>{/if}
