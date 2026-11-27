@@ -358,14 +358,7 @@ table.list th.c-pick, table.list td.c-pick { width:2.4rem; padding-right:0; text
 .listhead { position:sticky; top:var(--navh, 0px); z-index:6; background:var(--bg); padding:.5rem 0 .1rem; margin-top:-.5rem; }
 table.list thead th { position:sticky; top:var(--stick, 0px); z-index:5; background:var(--bg); }
 .count .more { padding:.05rem .6rem; font-size:.85rem; }
-/* The list's scroll bar is deliberately chunky and retro: square, flat blocks, a dithered unloaded track. It replaces the browser's own bar while it is shown (not on small screens, where it is hidden). */
-html.own-scroll { scrollbar-width:none; } html.own-scroll::-webkit-scrollbar { display:none; }
-@media (max-width:600px) { html.own-scroll { scrollbar-width:auto; } html.own-scroll::-webkit-scrollbar { display:initial; } }
-.scrub { position:fixed; width:16px; border-radius:0; cursor:grab; touch-action:none; z-index:20;
-  background-color:var(--bg); background-image:linear-gradient(45deg,var(--line-strong) 25%,transparent 25% 75%,var(--line-strong) 75%),linear-gradient(45deg,var(--line-strong) 25%,transparent 25% 75%,var(--line-strong) 75%); background-size:4px 4px; background-position:0 0,2px 2px; }
-.scrub.drag { cursor:grabbing; }
-.scrub-loaded { position:absolute; left:0; right:0; top:0; background:color-mix(in srgb, var(--accent) 30%, var(--bg)); }
-.scrub-handle { position:absolute; left:0; right:0; min-height:14px; border-radius:0; pointer-events:none; background:var(--accent); }
-.scrub:hover .scrub-handle, .scrub.drag .scrub-handle { background:var(--accent-text); }
-.scrub-bubble { position:absolute; right:24px; transform:translateY(-50%); white-space:nowrap; padding:.2rem .5rem; border-radius:0; background:var(--ink); color:var(--bg); font:500 .78rem/1.3 "IBM Plex Mono", ui-monospace, monospace; pointer-events:none; }
-@media (max-width:600px) { .scrub { display:none; } }
+/* Where the view is in the whole list: a 2px strip under the pinned bars (loaded part tinted, part on screen solid) */
+.gauge { position:relative; height:2px; margin-top:.5rem; background:var(--line); }
+.gauge-loaded { position:absolute; left:0; top:0; bottom:0; background:color-mix(in srgb, var(--accent) 30%, var(--bg)); }
+.gauge-view { position:absolute; top:0; bottom:0; min-width:6px; background:var(--accent); }

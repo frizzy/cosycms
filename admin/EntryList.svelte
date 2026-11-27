@@ -128,9 +128,9 @@
     return () => io.disconnect();
   });
 
-  // The scroll bar: the whole list as a track, what is loaded shaded, and the part on screen as the handle. Drag or click to jump.
-  let listEl = $state<HTMLElement>(), track = $state<HTMLElement>(), navH = $state(0), headH = $state(0), headEl = $state<HTMLElement>();
-  let vis = $state({ top: 0, size: 1 }), bubble = $state<{ y: number; text: string } | null>(null), dragging = $state(false), dwell: ReturnType<typeof setTimeout>;
+  // A thin strip under the pinned bars shows where the view is in the whole list: loaded part tinted, the part on screen solid. It is only a gauge; the browser's own scroll bar does the scrolling.
+  let listEl = $state<HTMLElement>(), navH = $state(0), headH = $state(0), headEl = $state<HTMLElement>();
+  let vis = $state({ top: 0, size: 1 });
   const stick = $derived(navH + headH);
   $effect(() => {
     const nav = document.querySelector("nav"), mq = matchMedia("(max-width:760px)");
@@ -141,57 +141,15 @@
     if (headEl) ro.observe(headEl);
     return () => ro.disconnect();
   });
-  // The bar spans the rows that are on screen: it starts at the first row (or under the pinned bars and column heads once they pin), ends where the list ends, and sits just beside the list.
-  let pos = $state({ top: 0, height: 0, left: 0 });
   function measure() {
-    const sbw = innerWidth - document.documentElement.clientWidth; // a classic scroll bar takes room; the overlay kind (0) floats over the edge
     if (!listEl || !rows?.length || !total) return;
     const r = listEl.getBoundingClientRect(), head = listEl.querySelector("thead")?.getBoundingClientRect().height ?? 0;
     const body = r.height - head, bodyTop = r.top + head, shownTop = Math.max(stick + head, bodyTop), shownBottom = Math.min(innerHeight, r.bottom), frac = rows.length / total;
     const a = Math.min(1, Math.max(0, (shownTop - bodyTop) / body)), b = Math.min(1, Math.max(a, (shownBottom - bodyTop) / body));
-    vis = { top: a * frac, size: Math.max(0.02, (b - a) * frac) };
-    const top = Math.max(stick + head, bodyTop) + 2, bottom = Math.min(innerHeight - 12, r.bottom);
-    pos = { top, height: Math.max(0, bottom - top), left: Math.min(r.right + 10, innerWidth - sbw - 22) };
+    vis = { top: a * frac, size: Math.max(0.01, (b - a) * frac) };
   }
   $effect(() => { rows?.length; total; stick; listEl; tick().then(measure); });
-  const longList = $derived(!unused && total > BATCH), showTrack = $derived(longList && pos.height > 40);
-  $effect(() => { if (!longList) return; document.documentElement.classList.add("own-scroll"); return () => document.documentElement.classList.remove("own-scroll"); });
-  const hint = (i: number) => {
-    const e = rows?.[Math.min(i, (rows?.length ?? 1) - 1)];
-    if (!e || i >= (rows?.length ?? 0)) return "";
-    return sort === "updated" ? new Date(e.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : sort === "status" ? (e.published ? "Published" : "Draft") : (label(e)[0] ?? "").toUpperCase();
-  };
-  function point(e: PointerEvent) {
-    const r = track!.getBoundingClientRect(), f = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)), i = Math.round(f * total);
-    const b = { y: e.clientY - r.top, text: `${Math.min(total, i + 1)} of ${total}${hint(i) ? ` · ${hint(i)}` : ""}` };
-    clearTimeout(dwell);
-    if (dragging) bubble = b; // while dragging it follows at once; when only hovering it appears once the pointer rests
-    else { bubble = null; dwell = setTimeout(() => (bubble = b), 600); }
-    return f;
-  }
-  // Grabbing the handle changes nothing; dragging it scrolls by how far the pointer moved, in step with it. Pressing the empty track jumps there (smoothly).
-  let handleEl = $state<HTMLElement>(), grab: { y: number; scroll: number } | null = null, lastY = 0;
-  function press(e: PointerEvent) {
-    const h = handleEl?.getBoundingClientRect();
-    if (h && e.clientY >= h.top - 3 && e.clientY <= h.bottom + 3) { dragging = true; track?.setPointerCapture(e.pointerId); grab = { y: e.clientY, scroll: scrollY }; lastY = e.clientY; }
-    else jump(point(e), true);
-  }
-  function drag(y: number) {
-    if (!grab || !listEl || !rows?.length || !pos.height) return;
-    lastY = y;
-    const r = listEl.getBoundingClientRect(), head = listEl.querySelector("thead")?.getBoundingClientRect().height ?? 0;
-    const want = grab.scroll + (y - grab.y) * (((r.height - head) / rows.length) * total / pos.height); // the track stands for every entry, so a pixel of it is many pixels of list
-    scrollTo({ top: want, behavior: "instant" });
-    // Dragged past what is loaded: load on, then carry on from where the pointer is.
-    if (scrollY < want - 2 && rows.length < total && !loadingMore) { const n = rows.length; loadMore(n + BATCH).then(() => { if (dragging && rows && rows.length > n) drag(lastY); }); }
-  }
-  async function jump(f: number, smooth = false) {
-    const start = Math.round(Math.min(Math.max(0, f - vis.size / 2), 1 - vis.size) * total);
-    if (start >= (rows?.length ?? 0) && !loadingMore) await loadMore(start + BATCH);
-    if (!listEl || !rows?.length) return;
-    const r = listEl.getBoundingClientRect(), head = listEl.querySelector("thead")?.getBoundingClientRect().height ?? 0, idx = Math.min(start, rows.length - 1);
-    scrollTo({ top: scrollY + r.top + head + (idx / rows.length) * (r.height - head) - stick - head, behavior: smooth ? "smooth" : "instant" });
-  }
+  const gauge = $derived(!unused && total > BATCH);
 
   const shown = $derived(unused ? unused.items : rows);
   const titled = $derived(!!col.titleField);
@@ -238,6 +196,7 @@
     <button type="button" class="ghost" disabled={working} onclick={() => (sel = [])}>Clear</button>
   </div>
 {/if}
+{#if gauge}<div class="gauge" aria-hidden="true"><span class="gauge-loaded" style="width:{(rows ? rows.length / total : 0) * 100}%"></span><span class="gauge-view" style="left:{vis.top * 100}%;width:{vis.size * 100}%"></span></div>{/if}
 </div>
 {#if failed.length}
   <div class="notice bulkfail"><p><strong>{failed.length} couldn't be done:</strong></p>
@@ -299,13 +258,3 @@
 {/if}
 
 <svelte:window onscroll={measure} onresize={measure} />
-{#if showTrack}
-  <div class="scrub" class:drag={dragging} role="presentation" bind:this={track} style="top:{pos.top}px;height:{pos.height}px;left:{pos.left}px"
-    onpointerdown={press}
-    onpointermove={(e) => { point(e); if (dragging) drag(e.clientY); }}
-    onpointerup={() => { dragging = false; grab = null; bubble = null; }} onpointercancel={() => { dragging = false; grab = null; bubble = null; }} onpointerleave={() => { clearTimeout(dwell); if (!dragging) bubble = null; }}>
-    <div class="scrub-loaded" style="height:{(rows ? rows.length / total : 0) * 100}%"></div>
-    <div class="scrub-handle" bind:this={handleEl} style="top:{vis.top * 100}%;height:{vis.size * 100}%"></div>
-    {#if bubble}<div class="scrub-bubble" style="top:{bubble.y}px">{bubble.text}</div>{/if}
-  </div>
-{/if}
