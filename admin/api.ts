@@ -1,3 +1,4 @@
+import type { Change } from "../src/diff";
 import type { Collection, Field } from "../src/fields";
 import type { FileValue } from "../src/images";
 import type { BlockDef } from "../src/blocks";
@@ -39,6 +40,7 @@ export type Provider = { id: string; name: string; help: string; clientId: strin
 export type Hit = Entry & { match: { title: string; snippet: string | null } }; // title and snippet have the matched words between \u0001 and \u0002
 export type Notice = { id: string; at: string; kind: string; level: "error" | "success" | "info"; title: string; body: string | null; link: string | null; readAt: string | null };
 export type Activity = { id: string; at: string; actor: string; via: string | null; action: string; collection: string | null; entryId: string | null; label: string | null; detail: string | null; undoable: number };
+export type Trashed = { id: string; at: string; actor: string; collection: string; label: string; entryId: string };
 export type Counts = Record<string, { drafts: number; edited: number }>;
 export type Connection = { id: string; name: string; lastActive: number };
 
@@ -101,6 +103,11 @@ export const api = {
   publish: () => call<{ changed: number; ref?: string; warnings?: string[]; remaining?: number }>("/publish", { method: "POST" }),
   counts: () => call<Counts>("/entries/counts"),
   activity: (o: { entry?: string; offset?: number } = {}) => call<{ items: Activity[]; total: number }>(`/activity?limit=50&offset=${o.offset ?? 0}${o.entry ? `&entry=${encodeURIComponent(o.entry)}` : ""}`),
+  trash: () => call<{ items: Trashed[]; days: number }>("/trash"),
+  activityChanges: (id: string) => call<{ changes: Change[]; slug: { from: string; to: string } | null; gone: boolean }>(`/activity/${id}/changes`),
+  historySettings: () => call<{ keep: number; trashDays: number }>("/settings/history"),
+  saveHistorySettings: (s: { keep: number; trashDays: number }) => call<void>("/settings/history", { method: "PUT", body: JSON.stringify(s) }),
+  bulk: (ids: string[], action: "publish" | "unpublish" | "delete") => call<{ done: number; failed: { id: string; label: string; error: string }[] }>("/entries/bulk", { method: "POST", body: JSON.stringify({ ids, action }) }),
   undo: (id: string) => call<Entry>(`/activity/${id}/undo`, { method: "POST" }),
   schedule: () => call<{ kind: string; at: string; status: string; error: string | null; entry?: { id: string; collection: string; label: string } }[]>("/schedule"),
   values: (collection: string, field: string) => call<string[]>(`/collections/${collection}/values/${field}`),

@@ -4,7 +4,9 @@
   import { dataSchema, entryLabel } from "../src/fields";
   import { api, type Entry } from "./api";
   import { blobUrl } from "../src/images";
-  import { store } from "./store.svelte";
+  import { refreshCounts, store } from "./store.svelte";
+  import { toast } from "./toast.svelte";
+  import { ask } from "./confirm.svelte";
   import LiveIcon from "./LiveIcon.svelte";
   import ClockIcon from "./ClockIcon.svelte";
   let { collection }: { collection: string } = $props();
@@ -45,9 +47,30 @@
   let q = $state(""), sort = $state("updated"), dir = $state<"asc" | "desc">("desc"), page = $state(0);
   let rows = $state<Entry[] | undefined>(), total = $state(0), error = $state(""), busy = $state(false);
 
+  // Selection for bulk actions. It is cleared whenever the list changes, so an action never reaches an entry that isn't on screen.
+  let sel = $state<string[]>([]), reload = $state(0), working = $state(false), failed = $state<{ id: string; label: string; error: string }[]>([]);
+  const toggle = (id: string) => (sel = sel.includes(id) ? sel.filter((x) => x !== id) : [...sel, id]);
+  const verb = { publish: "Published", unpublish: "Unpublished", delete: "Deleted" } as const;
+  async function bulk(action: "publish" | "unpublish" | "delete") {
+    const n = sel.length, what = `${n} ${n === 1 ? "entry" : "entries"}`;
+    const q = { publish: { title: `Publish ${what}?`, message: "Each goes live on the next Deploy.", confirm: "Publish" },
+      unpublish: { title: `Take ${what} off the site?`, message: "The drafts stay. They come off the site on the next Deploy.", confirm: "Unpublish" },
+      delete: { title: `Delete ${what}?`, message: "They move to the Trash, where they can be restored for a while. Entries still linked from elsewhere are skipped.", confirm: "Delete", danger: true } }[action];
+    if (!(await ask(q))) return;
+    working = true; error = "";
+    try {
+      const r = await api.bulk(sel, action);
+      failed = r.failed;
+      if (r.done) toast(`${verb[action]} ${r.done} ${r.done === 1 ? "entry" : "entries"}`);
+      reload++; refreshCounts();
+    } catch (e) { error = (e as Error).message; }
+    working = false;
+  }
+
   let first = true; // the first load is immediate; typing is debounced
   $effect(() => {
-    const query = q.trim(), s = sort, d = dir, p = page, f = filter;
+    const query = q.trim(), s = sort, d = dir, p = page, f = filter; reload;
+    sel = []; if (!reload) failed = [];
     let stale = false;
     const t = setTimeout(() => {
       busy = true;
@@ -99,6 +122,23 @@
     <button type="button" class="ghost" onclick={() => (unused = undefined)}>Show all</button></p>
 {/if}
 
+{#if sel.length}
+  <div class="bulkbar" role="toolbar" aria-label="Actions for the selection">
+    <strong>{sel.length} selected</strong>
+    <button type="button" class="ghost" disabled={working} onclick={() => (sel = shown?.map((e) => e.id) ?? [])}>Select all on this page</button>
+    <span class="spacer"></span>
+    <button type="button" disabled={working} onclick={() => bulk("publish")}>Publish</button>
+    <button type="button" class="ghost" disabled={working} onclick={() => bulk("unpublish")}>Unpublish</button>
+    <button type="button" class="danger" disabled={working} onclick={() => bulk("delete")}>Delete</button>
+    <button type="button" class="ghost" disabled={working} onclick={() => (sel = [])}>Clear</button>
+  </div>
+{/if}
+{#if failed.length}
+  <div class="notice bulkfail"><p><strong>{failed.length} couldn't be done:</strong></p>
+    <ul>{#each failed as f (f.id)}<li><a href="#/{collection}/{f.id}">{f.label}</a>: {f.error}</li>{/each}</ul>
+    <button type="button" class="ghost" onclick={() => (failed = [])}>Dismiss</button></div>
+{/if}
+
 {#if error}<p class="error">{error}</p>
 {:else if !shown}
   <div class="stack" aria-busy="true" aria-label="Loading">{#each [1, 2, 3, 4] as _}<div class="skel" style="height:44px"></div>{/each}</div>
@@ -106,10 +146,11 @@
   {#if grid}
     <div class="grid" class:busy>
       {#each shown as e (e.id)}
+        <div class="gwrap"><input type="checkbox" class="pick" aria-label="Select {label(e)}" checked={sel.includes(e.id)} onchange={() => toggle(e.id)} />
         <a class="gtile" href="#/{collection}/{e.id}" title={label(e)}>
           {#if e.thumb}<img src={blobUrl(e.thumb)} alt="" loading="lazy" />{:else}<span class="noimg"></span>{/if}
           <span class="cap"><span class="ell">{label(e)}</span>{#if e.schedule}<span class="sched" class:failed={e.schedule.failed} title={soon(e)}><ClockIcon /></span>{/if}{#if e.published}<span class:edited={e.pending} title={e.pending ? "Published, with draft changes" : "Published"}><LiveIcon /></span>{/if}</span>
-        </a>
+        </a></div>
       {:else}
         <p class="empty">{#if q.trim() || filter}No entries match{q.trim() ? ` “${q.trim()}”` : ""}{filter ? " this filter" : ""}.{:else}Nothing here yet. <a href="#/{collection}/new">Create the first entry.</a>{/if}</p>
       {/each}
@@ -117,6 +158,7 @@
   {:else}
   <table class="list" class:busy>
     <thead><tr>
+      <th class="c-pick"><input type="checkbox" class="pick" aria-label="Select all on this page" checked={!!shown?.length && sel.length === shown.length} onchange={(e) => (sel = e.currentTarget.checked ? shown?.map((x) => x.id) ?? [] : [])} /></th>
       {#each [[nameCol, titled ? "Title" : "Slug"], ["status", "Status"], ["updated", "Updated"]] as [key, text] (key)}
         <th aria-sort={aria(key)} class="c-{key}">
           <button type="button" class="sort" onclick={() => sortBy(key)}>{text}<span aria-hidden="true">{sort === key ? (dir === "asc" ? "▲" : "▼") : ""}</span></button>
@@ -125,7 +167,8 @@
     </tr></thead>
     <tbody>
       {#each shown as e (e.id)}
-        <tr>
+        <tr class:picked={sel.includes(e.id)}>
+          <td class="c-pick"><input type="checkbox" class="pick" aria-label="Select {label(e)}" checked={sel.includes(e.id)} onchange={() => toggle(e.id)} /></td>
           <td class="name"><div class="cell">
             {#if col.thumbField}{#if e.thumb}<img class="thumb" src={blobUrl(e.thumb)} alt="" loading="lazy" />{:else}<span class="thumb none" aria-hidden="true"></span>{/if}{/if}
             <a class="ell" href="#/{collection}/{e.id}" title={label(e)}>{label(e)}</a>
@@ -135,7 +178,7 @@
           <td class="c-status">{#if e.published}<span class:edited={e.pending} title={e.pending ? "Published, with changes in the draft that aren't live yet" : "Has a published version"}><LiveIcon />{e.pending ? "Edited" : "Published"}</span>{:else}Draft{/if}</td><td class="c-updated">{when(e.updatedAt)}</td>
         </tr>
       {:else}
-        <tr><td colspan="3" class="empty">
+        <tr><td colspan="4" class="empty">
           {#if q.trim() || filter}No entries match{q.trim() ? ` “${q.trim()}”` : ""}{filter ? " this filter" : ""}.{:else}Nothing here yet. <a href="#/{collection}/new">Create the first entry.</a>{/if}
         </td></tr>
       {/each}

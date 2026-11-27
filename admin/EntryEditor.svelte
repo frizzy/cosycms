@@ -175,7 +175,7 @@
   }
 
   async function remove() {
-    if (!id || !(await ask({ title: "Delete this entry?", confirm: "Delete", danger: true }))) return;
+    if (!id || !(await ask({ title: "Delete this entry?", message: "It moves to the Trash, where it can be restored for a while.", confirm: "Delete", danger: true }))) return;
     error = "";
     try { await api.remove(id); } catch (e) { error = (e as Error).message; return; } // e.g. still used by another entry
     store.dirty = false;

@@ -15,6 +15,8 @@
   import TemplateBuilder from "./TemplateBuilder.svelte";
   import SettingsPage from "./SettingsPage.svelte";
   import ActivityPage from "./ActivityPage.svelte";
+  import TrashPage from "./TrashPage.svelte";
+  import TrashIcon from "./TrashIcon.svelte";
   import HomePage from "./HomePage.svelte";
   import Palette from "./Palette.svelte";
   import SearchIcon from "./SearchIcon.svelte";
@@ -101,6 +103,7 @@
       {#if owner}<a href="#/collections/new" class="icon-btn" aria-label="New collection" title="New collection"><PlusIcon /></a>{/if}
       <a href="#/notifications" class="navrow settings" class:active={a === "notifications"}><BellIcon />Notifications{#if store.unread}<span class="badge" title="{store.unread} unread">{store.unread}</span>{/if}</a>
       <a href="#/activity" class="navrow" class:active={a === "activity"}><ActivityIcon />Activity</a>
+      <a href="#/trash" class="navrow" class:active={a === "trash"}><TrashIcon />Trash</a>
       {#if owner}<a href="#/blocks" class="navrow" class:active={a === "blocks"}><BlocksIcon />Blocks</a>{/if}
       {#if owner}<a href="#/templates" class="navrow" class:active={a === "templates"}><TemplatesIcon />Templates</a>{/if}
       <a href="#/settings" class="navrow" class:active={a === "settings"}><GearIcon />Settings</a>
@@ -121,6 +124,8 @@
       <p class="muted">Only an owner can change collections, blocks and templates.</p>
     {:else if a === "notifications"}
       <NotificationsPage />
+    {:else if a === "trash"}
+      <TrashPage />
     {:else if a === "activity"}
       {#key hash}<ActivityPage entry={b} />{/key}
     {:else if a === "settings"}

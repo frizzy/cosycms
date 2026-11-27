@@ -346,3 +346,11 @@ dialog.palette li.none { color:var(--muted); cursor:default; } dialog.palette .g
 dialog.palette .title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; } dialog.palette .snip { color:var(--muted); font-size:.85rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 dialog.palette .meta { flex:none; color:var(--muted); font-size:.8rem; }
 nav .find { background:transparent; color:var(--ink); font-weight:500; margin-bottom:.4rem; } nav .find kbd { margin-left:auto; font:500 .7rem var(--sans); color:var(--muted); border:1px solid var(--line-strong); border-radius:4px; padding:0 .3rem; }
+/* Bulk selection */
+.pick { width:1.05rem; height:1.05rem; margin:0; padding:0; cursor:pointer; accent-color:var(--accent); }
+table.list th.c-pick, table.list td.c-pick { width:2.4rem; padding-right:0; text-align:center; } table.list tr.picked { background:var(--accent-soft); }
+.gwrap { position:relative; min-width:0; } .gwrap .pick { position:absolute; top:.45rem; left:.45rem; z-index:1; opacity:0; transition:opacity .1s; }
+.gwrap:hover .pick, .gwrap .pick:focus-visible, .gwrap .pick:checked, .grid:has(.pick:checked) .pick { opacity:1; }
+@media (hover:none) { .gwrap .pick { opacity:1; } }
+.bulkbar { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; margin-bottom:1rem; padding:.55rem .8rem; border:1px solid var(--line-strong); border-radius:8px; background:var(--accent-soft); } .bulkbar .spacer { flex:1; }
+.bulkfail { margin-bottom:1rem; } .bulkfail ul { margin:.3rem 0 .6rem; padding-left:1.1rem; } .bulkfail p { margin:0; }

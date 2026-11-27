@@ -4,6 +4,7 @@
   import ClockIcon from "./ClockIcon.svelte";
   import { toast } from "./toast.svelte";
   import { ask } from "./confirm.svelte";
+  import ChangeDialog, { type ChangeView } from "./ChangeDialog.svelte";
   let { entry }: { entry?: string } = $props(); // narrows the history to one entry
 
   const PHRASE: Record<string, string> = {
@@ -26,9 +27,22 @@
   }
   $effect(() => { entry; load(); });
   const UNDO: Record<string, string> = { "entry.save": "Undo this change", "entry.revert": "Get the discarded draft back", "entry.delete": "Bring it back as a draft", "entry.restore": "Undo this restore" };
+  // Undoing a save shows what it would change first; bringing back a deleted entry only asks.
+  let view = $state<ChangeView | null>(null), target: Activity | null = null;
   async function undo(a: Activity) {
-    if (!(await ask(a.action === "entry.delete" ? { title: "Bring this entry back?", message: "It comes back as a draft.", confirm: "Bring back" } : { title: "Put the draft back the way it was?", message: "That replaces the draft as it is now. A published version isn't touched.", confirm: "Undo" }))) return;
-    try { await api.undo(a.id); toast("Done"); await load(); refreshCounts(); } catch (e) { toast((e as Error).message, "error"); }
+    if (a.action === "entry.delete") {
+      if (!(await ask({ title: "Bring this entry back?", message: "It comes back as a draft.", confirm: "Bring back" }))) return;
+      return run(a);
+    }
+    try {
+      const r = await api.activityChanges(a.id);
+      target = a;
+      view = { stage: "review", title: "Put the draft back the way it was?", status: "This replaces the draft as it is now. A published version isn't touched.", changes: r.changes, confirm: "Restore this version",
+        empty: r.slug ? `Only the slug changes: ${r.slug.from} → ${r.slug.to}` : "The draft already matches that version." };
+    } catch (e) { toast((e as Error).message, "error"); }
+  }
+  async function run(a: Activity) {
+    try { await api.undo(a.id); toast("Restored"); await load(); refreshCounts(); } catch (e) { toast((e as Error).message, "error"); }
   }
   const when = (at: string) => new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 </script>
@@ -66,3 +80,5 @@
   </ol>
   {#if items.length < total}<p><button type="button" class="ghost" onclick={() => load(true)}>Show older</button> <span class="muted">{items.length} of {total}</span></p>{/if}
 {/if}
+
+<ChangeDialog {view} canList={false} onconfirm={async () => { const a = target; view = null; if (a) await run(a); }} onclose={() => (view = null)} onlist={() => (view = null)} />

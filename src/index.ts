@@ -8,7 +8,8 @@ import { notify, successWanted } from "./notifications";
 import { INDEX_VERSION, type Indexable, ftsQuery, rebuild as rebuildAll, reindex, reindexTemplate, searchIndex, unindex, unindexTemplate } from "./search";
 import { futureTime, runDue, setJob, type Job } from "./schedule";
 import { TemplateDef } from "./templates";
-import { changedKeys, logActivity, type Event } from "./activity";
+import { changedKeys, historyLimits, logActivity, pruneHistory, type Event } from "./activity";
+import { fieldChanges } from "./diff";
 import { BlockDef, blockLibraries } from "./blocks";
 import { CollectionCreate, CollectionDef, dataSchema, entryLabel, fileFieldOf, nextFreeSlug, shapeChanges, slugBase, type Field } from "./fields";
 import { bodyLimit } from "hono/body-limit";
@@ -455,13 +456,39 @@ app.post("/entries/:id/publish", humanOnly, async (c) => {
 });
 
 // Takes it off the site at the next deploy; the draft stays.
-app.post("/entries/:id/unpublish", humanOnly, async (c) => {
-  const [res] = await db(c).update(entries).set({ live: null, status: "draft", pending: false }).where(eq(entries.id, c.req.param("id"))).returning();
-  if (!res) return c.json({ error: "not found" }, 404);
+type Ctx = Parameters<typeof log>[0];
+async function unpublishRow(c: Ctx, id: string) {
+  const [res] = await db(c).update(entries).set({ live: null, status: "draft", pending: false }).where(eq(entries.id, id)).returning();
+  if (!res) return null;
   await log(c, { action: "entry.unpublish", collection: res.collection, entryId: res.id, label: await labelOf(c, res) });
   await syncSchedule(c, res); // a draft with a future go-live time is scheduled again
   await indexEntry(c, res);
-  return c.json((await attach(c, [shape(res)]))[0]);
+  return res;
+}
+app.post("/entries/:id/unpublish", humanOnly, async (c) => {
+  const res = await unpublishRow(c, c.req.param("id"));
+  return res ? c.json((await attach(c, [shape(res)]))[0]) : c.json({ error: "not found" }, 404);
+});
+
+// Many entries at once (the list's selection). Each one is done on its own, so one that can't be (still used, bad data) doesn't stop the rest.
+app.post("/entries/bulk", humanOnly, async (c) => {
+  const b = z.object({ ids: z.array(z.string()).min(1).max(200), action: z.enum(["publish", "unpublish", "delete"]) }).safeParse(await c.req.json().catch(() => null));
+  if (!b.success) return c.json(b.error.flatten(), 400);
+  const rows = await db(c).select().from(entries).where(inArray(entries.id, b.data.ids));
+  const who = { email: c.get("user").email, via: c.get("user").via };
+  let done = 0;
+  const failed: { id: string; label: string; error: string }[] = [];
+  for (const row of rows) {
+    let error = "";
+    if (b.data.action === "publish") {
+      const r = row.live && !row.pending ? null : await publishRow(c, row, who, " (bulk)");
+      if (r?.error) error = "error" in r.error && typeof r.error.error === "string" ? r.error.error : "Its fields need fixing first. Open it to see what.";
+    }
+    else if (b.data.action === "unpublish") await unpublishRow(c, row.id);
+    else error = (await deleteRow(c, row)) ?? "";
+    if (error) failed.push({ id: row.id, label: await labelOf(c, row), error }); else done++;
+  }
+  return c.json({ done, failed });
 });
 
 // Throws the draft away and goes back to the published version.
@@ -512,17 +539,50 @@ app.get("/entries/:id/usage", async (c) => {
   return row ? c.json({ items: await usedBy(c, row, 50) }) : c.json({ error: "not found" }, 404);
 });
 
+/** Deletes an entry unless something still points at it; a message says why not. The copy in the history is what the trash restores. */
+async function deleteRow(c: Ctx, row: Row): Promise<string | null> {
+  const users = (await usedBy(c, row)).map((u) => `${u.collection}/${u.slug}`);
+  if (users.length) return `Still used by ${users.join(", ")}. Remove it there first.`;
+  await db(c).delete(entries).where(eq(entries.id, row.id));
+  await db(c).delete(schedule).where(eq(schedule.ref, row.id));
+  await unindex(c.env.DB, row.id);
+  await log(c, { action: "entry.delete", collection: row.collection, entryId: row.id, label: await labelOf(c, row), before: { slug: row.slug, data: row.data } });
+  return null;
+}
+
 app.delete("/entries/:id", async (c) => {
   const [row] = await db(c).select().from(entries).where(eq(entries.id, c.req.param("id")));
   if (row?.live && c.get("user").app) return c.json({ error: "This entry is published. Only a person can take it off the site." }, 403);
-  if (row) {
-    const users = (await usedBy(c, row)).map((u) => `${u.collection}/${u.slug}`);
-    if (users.length) return c.json({ error: `Still used by ${users.join(", ")}. Remove it there first.` }, 409);
-    await db(c).delete(entries).where(eq(entries.id, row.id));
-    await db(c).delete(schedule).where(eq(schedule.ref, row.id));
-    await unindex(c.env.DB, row.id);
-    await log(c, { action: "entry.delete", collection: row.collection, entryId: row.id, label: await labelOf(c, row), before: { slug: row.slug, data: row.data } });
-  }
+  const why = row ? await deleteRow(c, row) : null;
+  return why ? c.json({ error: why }, 409) : c.body(null, 204);
+});
+
+// Deleted entries still in the trash: the delete's saved copy exists and nothing has taken the entry's place. Restoring is the activity undo.
+app.get("/trash", async (c) => {
+  const { trashDays } = await historyLimits(c.env.DB);
+  await pruneHistory(c.env.DB);
+  const { results } = await c.env.DB.prepare("select a.id, a.at, a.actor, a.collection, a.label, a.entryId from activity a where a.action = 'entry.delete' and a.before is not null and not exists (select 1 from entries e where e.id = a.entryId) order by a.at desc limit 200").all();
+  return c.json({ items: results, days: trashDays });
+});
+
+// What restoring a saved version would change in the entry as it is now (everything, for a deleted entry).
+app.get("/activity/:id/changes", async (c) => {
+  const [a] = await db(c).select().from(activity).where(eq(activity.id, c.req.param("id")));
+  if (!a?.before || !a.entryId || !a.collection) return c.json({ error: "No saved copy of that version." }, 404);
+  const [col] = await db(c).select().from(collections).where(eq(collections.key, a.collection));
+  const [cur] = await db(c).select().from(entries).where(eq(entries.id, a.entryId));
+  const changes = col ? fieldChanges(col.fields, cur?.data ?? {}, a.before.data) : [];
+  return c.json({ changes, slug: cur && cur.slug !== a.before.slug ? { from: cur.slug, to: a.before.slug } : null, gone: !cur });
+});
+
+// History settings: how many saved versions each entry keeps, and how long a deleted entry stays in the trash.
+app.get("/settings/history", ownerOnly, async (c) => c.json(await historyLimits(c.env.DB)));
+app.put("/settings/history", ownerOnly, async (c) => {
+  const b = z.object({ keep: z.number().int().min(1).max(500), trashDays: z.number().int().min(0).max(3650) }).safeParse(await c.req.json().catch(() => null));
+  if (!b.success) return c.json(b.error.flatten(), 400);
+  for (const [k, v] of [["history.keep", b.data.keep], ["history.trashDays", b.data.trashDays]] as const)
+    await db(c).insert(settings).values({ key: k, value: String(v) }).onConflictDoUpdate({ target: settings.key, set: { value: String(v) } });
+  await pruneHistory(c.env.DB);
   return c.body(null, 204);
 });
 
@@ -669,6 +729,7 @@ export async function tick(env: Env["Bindings"]) {
     await notify(env.DB, { kind: "job", ref: job.id, level: "error", title: e ? `Scheduled publish failed: ${await labelOf({ env }, e)}` : job.kind === "deploy.run" ? "Scheduled deploy failed" : `${job.kind} failed`, body: error, link: e ? `#/${e.collection}/${e.id}` : undefined });
   };
   const a = await runDue(env.DB, h, Date.now(), failed), b = await runDue(env.DB, h, Date.now(), failed);
+  if (new Date().getMinutes() === 0) await pruneHistory(env.DB).catch(() => {}); // hourly: copies past the history limits
   return { ran: a.ran + b.ran, ok: a.ok + b.ok };
 }
 
