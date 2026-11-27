@@ -141,7 +141,7 @@
     if (headEl) ro.observe(headEl);
     return () => ro.disconnect();
   });
-  // The bar starts where the pinned bars and column heads end (fixed, so it never jumps when they pin), ends where the list ends, and sits just beside the list.
+  // The bar spans the rows that are on screen: it starts at the first row (or under the pinned bars and column heads once they pin), ends where the list ends, and sits just beside the list.
   let pos = $state({ top: 0, height: 0, left: 0 });
   function measure() {
     const sbw = innerWidth - document.documentElement.clientWidth; // a classic scroll bar takes room; the overlay kind (0) floats over the edge
@@ -150,7 +150,7 @@
     const body = r.height - head, bodyTop = r.top + head, shownTop = Math.max(stick + head, bodyTop), shownBottom = Math.min(innerHeight, r.bottom), frac = rows.length / total;
     const a = Math.min(1, Math.max(0, (shownTop - bodyTop) / body)), b = Math.min(1, Math.max(a, (shownBottom - bodyTop) / body));
     vis = { top: a * frac, size: Math.max(0.02, (b - a) * frac) };
-    const top = stick + head + 6, bottom = Math.min(innerHeight - 12, r.bottom);
+    const top = Math.max(stick + head, bodyTop) + 2, bottom = Math.min(innerHeight - 12, r.bottom);
     pos = { top, height: Math.max(0, bottom - top), left: Math.min(r.right + 10, innerWidth - sbw - 22) };
   }
   $effect(() => { rows?.length; total; stick; listEl; tick().then(measure); });
@@ -168,6 +168,13 @@
     if (dragging) bubble = b; // while dragging it follows at once; when only hovering it appears once the pointer rests
     else { bubble = null; dwell = setTimeout(() => (bubble = b), 600); }
     return f;
+  }
+  // Pressing the bar before the bars have pinned first scrolls the page up to where they pin, so the bar moves up together with the rows instead of jumping.
+  async function press(e: PointerEvent) {
+    dragging = true; track?.setPointerCapture(e.pointerId);
+    const over = (listEl?.getBoundingClientRect().top ?? 0) - stick;
+    if (over > 0) { scrollBy({ top: over, behavior: "instant" }); measure(); await tick(); }
+    jump(point(e));
   }
   async function jump(f: number) {
     const start = Math.round(Math.min(Math.max(0, f - vis.size / 2), 1 - vis.size) * total);
@@ -285,7 +292,7 @@
 <svelte:window onscroll={measure} onresize={measure} />
 {#if showTrack}
   <div class="scrub" class:drag={dragging} role="presentation" bind:this={track} style="top:{pos.top}px;height:{pos.height}px;left:{pos.left}px"
-    onpointerdown={(e) => { dragging = true; track?.setPointerCapture(e.pointerId); jump(point(e)); }}
+    onpointerdown={press}
     onpointermove={(e) => { const f = point(e); if (dragging) jump(f); }}
     onpointerup={() => { dragging = false; bubble = null; }} onpointercancel={() => { dragging = false; bubble = null; }} onpointerleave={() => { clearTimeout(dwell); if (!dragging) bubble = null; }}>
     <div class="scrub-loaded" style="height:{(rows ? rows.length / total : 0) * 100}%"></div>

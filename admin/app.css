@@ -362,11 +362,10 @@ table.list thead th { position:sticky; top:var(--stick, 0px); z-index:5; backgro
 html.own-scroll { scrollbar-width:none; } html.own-scroll::-webkit-scrollbar { display:none; }
 @media (max-width:600px) { html.own-scroll { scrollbar-width:auto; } html.own-scroll::-webkit-scrollbar { display:initial; } }
 .scrub { position:fixed; width:16px; border-radius:0; cursor:grab; touch-action:none; z-index:20;
-  background-color:var(--line); background-image:linear-gradient(45deg,var(--line-strong) 25%,transparent 25% 75%,var(--line-strong) 75%),linear-gradient(45deg,var(--line-strong) 25%,transparent 25% 75%,var(--line-strong) 75%); background-size:4px 4px; background-position:0 0,2px 2px; }
+  background-color:var(--bg); background-image:linear-gradient(45deg,var(--line-strong) 25%,transparent 25% 75%,var(--line-strong) 75%),linear-gradient(45deg,var(--line-strong) 25%,transparent 25% 75%,var(--line-strong) 75%); background-size:4px 4px; background-position:0 0,2px 2px; }
 .scrub.drag { cursor:grabbing; }
-.scrub-loaded { position:absolute; left:0; right:0; top:0; background:var(--line-strong); }
-.scrub-handle { position:absolute; left:0; right:0; min-height:14px; border-radius:0; pointer-events:none; opacity:.85;
-  background-color:var(--accent); background-image:repeating-linear-gradient(0deg,transparent 0 2px,rgba(255,255,255,.4) 2px 4px); background-size:100% 10px; background-repeat:no-repeat; background-position:center; }
-.scrub:hover .scrub-handle, .scrub.drag .scrub-handle { opacity:1; }
+.scrub-loaded { position:absolute; left:0; right:0; top:0; background:color-mix(in srgb, var(--accent) 30%, var(--bg)); }
+.scrub-handle { position:absolute; left:0; right:0; min-height:14px; border-radius:0; pointer-events:none; background:var(--accent); }
+.scrub:hover .scrub-handle, .scrub.drag .scrub-handle { background:var(--accent-text); }
 .scrub-bubble { position:absolute; right:24px; transform:translateY(-50%); white-space:nowrap; padding:.2rem .5rem; border-radius:0; background:var(--ink); color:var(--bg); font:500 .78rem/1.3 "IBM Plex Mono", ui-monospace, monospace; pointer-events:none; }
 @media (max-width:600px) { .scrub { display:none; } }
