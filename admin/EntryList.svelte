@@ -169,19 +169,17 @@
     else { bubble = null; dwell = setTimeout(() => (bubble = b), 600); }
     return f;
   }
-  // Pressing the bar before the bars have pinned first scrolls the page up to where they pin, so the bar moves up together with the rows instead of jumping.
-  async function press(e: PointerEvent) {
+  // A press scrolls smoothly, so the content above the list is seen leaving instead of vanishing; once dragging, it follows the pointer at once.
+  function press(e: PointerEvent) {
     dragging = true; track?.setPointerCapture(e.pointerId);
-    const over = (listEl?.getBoundingClientRect().top ?? 0) - stick;
-    if (over > 0) { scrollBy({ top: over, behavior: "instant" }); measure(); await tick(); }
-    jump(point(e));
+    jump(point(e), true);
   }
-  async function jump(f: number) {
+  async function jump(f: number, smooth = false) {
     const start = Math.round(Math.min(Math.max(0, f - vis.size / 2), 1 - vis.size) * total);
     if (start >= (rows?.length ?? 0) && !loadingMore) await loadMore(start + BATCH);
     if (!listEl || !rows?.length) return;
     const r = listEl.getBoundingClientRect(), head = listEl.querySelector("thead")?.getBoundingClientRect().height ?? 0, idx = Math.min(start, rows.length - 1);
-    scrollTo({ top: scrollY + r.top + head + (idx / rows.length) * (r.height - head) - stick - head, behavior: "instant" });
+    scrollTo({ top: scrollY + r.top + head + (idx / rows.length) * (r.height - head) - stick - head, behavior: smooth ? "smooth" : "instant" });
   }
 
   const shown = $derived(unused ? unused.items : rows);
