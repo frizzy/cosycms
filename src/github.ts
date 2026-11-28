@@ -1,7 +1,7 @@
 import type { BlobStore } from "./blobs.ts";
 import type { Change, Target } from "./targets.ts";
 
-export type GithubOpts = { token: string; repo: string; branch?: string; dir?: string };
+export type GithubOpts = { token: string; repo: string; branch?: string; dir?: string; name?: string; from?: string }; // name: the publish target's name; from: the branch to create `branch` from if it doesn't exist yet
 
 function client(o: GithubOpts, fetchFn: typeof fetch) {
   return async function gh<T>(path: string, method = "GET", body?: unknown): Promise<T> {
@@ -85,15 +85,21 @@ export function githubTarget(o: GithubOpts, fetchFn: typeof fetch = fetch, blobs
   }
 
   return {
-    name: "github",
+    name: o.name ?? "github",
     async publish(changes) {
-      const head = (await gh<{ object: { sha: string } }>(`git/ref/heads/${branch}`)).object.sha;
+      let head: string;
+      try { head = (await gh<{ object: { sha: string } }>(`git/ref/heads/${branch}`)).object.sha; }
+      catch (e) { // a preview branch is created from the live one the first time
+        if ((e as { status?: number }).status !== 404 || !o.from) throw e;
+        head = (await gh<{ object: { sha: string } }>(`git/ref/heads/${o.from}`)).object.sha;
+        await gh("git/refs", "POST", { ref: `refs/heads/${branch}`, sha: head });
+      }
       const base = (await gh<{ tree: { sha: string } }>(`git/commits/${head}`)).tree.sha;
       const entries = [];
       for (const c of changes) entries.push(await entry(c));
       const tree = await gh<{ sha: string }>("git/trees", "POST", { base_tree: base, tree: entries });
       const commit = await gh<{ sha: string }>("git/commits", "POST", {
-        message: `Publish ${changes.length} change${changes.length === 1 ? "" : "s"} from cosycms`,
+        message: `${o.name === "preview" ? "Update preview with" : "Publish"} ${changes.length} change${changes.length === 1 ? "" : "s"} from cosycms`,
         tree: tree.sha, parents: [head],
       });
       await gh(`git/refs/heads/${branch}`, "PATCH", { sha: commit.sha });

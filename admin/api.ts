@@ -31,8 +31,8 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return res.status === 204 ? (undefined as T) : res.json();
 }
 
-export type Settings = { repo?: string; branch?: string; dir?: string; hasToken: boolean; tokenError?: string };
-export type SettingsInput = { repo: string; branch: string; dir: string; token?: string };
+export type Settings = { repo?: string; branch?: string; dir?: string; previewBranch?: string; previewDir?: string; hasToken: boolean; tokenError?: string };
+export type SettingsInput = { repo: string; branch: string; dir: string; previewBranch: string; previewDir: string; token?: string };
 
 export type CollectionInput = { key?: string; label: string; slugSource?: string | null; titleField?: string | null; thumbField?: string | null; format?: "json" | "markdown" | "mdx" | null; folder?: string | null; bodyField?: string | null; urlTemplate?: string | null; single?: boolean; dates?: boolean; fields: Field[] };
 
@@ -46,6 +46,7 @@ export type HealthRow = { id: string; collection: string; label: string; file: {
 export type MediaHealth = { total: number; counts: { unused: number; large: number; weakAlt: number }; unused: HealthRow[]; large: HealthRow[]; weakAlt: (HealthRow & { alt: string; altKey: string; why: string })[] };
 export type BackupDest = { type: "r2"; accountId: string; bucket: string; accessKeyId: string; hasSecret?: boolean; prefix?: string } | { type: "ssh"; host: string; port?: number; user: string; path: string };
 export type BackupState = { dest: BackupDest | null; pubkey: string | null; hasPassword: boolean; test: { state: "pending" | "running" | "ok" | "failed"; at: string; detail?: string } | null };
+export type Channel = "live" | "preview"; // where a deploy goes: the live branch, or the preview branch
 export type LinkProblem = { id: string; collection: string; label: string; where: "live" | "draft"; kind: "missing" | "draft"; target: string; targetLabel: string | null };
 export type Used = { id: string; collection: string; slug: string; title: string };
 export type Trashed = { id: string; at: string; actor: string; collection: string; label: string; entryId: string };
@@ -96,8 +97,8 @@ export const api = {
   createCollection: (c: CollectionInput) => call<Collection>("/collections", { method: "POST", body: JSON.stringify(c) }),
   updateCollection: (key: string, c: CollectionInput) => call<Collection>(`/collections/${key}`, { method: "PUT", body: JSON.stringify(c) }),
   deleteCollection: (key: string) => call<void>(`/collections/${key}`, { method: "DELETE" }),
-  siteUrl: () => call<{ url: string }>("/settings/site"),
-  saveSiteUrl: (url: string) => call<void>("/settings/site", { method: "PUT", body: JSON.stringify({ url }) }),
+  siteUrl: () => call<{ url: string; previewUrl: string; preview: boolean }>("/settings/site"),
+  saveSiteUrl: (url: string, previewUrl: string) => call<void>("/settings/site", { method: "PUT", body: JSON.stringify({ url, previewUrl }) }),
   settings: () => call<Settings>("/settings"),
   saveSettings: (s: SettingsInput) => call<void>("/settings", { method: "PUT", body: JSON.stringify(s) }),
   search: (collection: string, o: { q: string; sort: string; dir: "asc" | "desc"; limit: number; offset: number; filter?: string }) =>
@@ -112,10 +113,10 @@ export const api = {
   update: (id: string, e: EntryInput) => call<Entry>(`/entries/${id}`, { method: "PUT", body: JSON.stringify(e) }),
   slugAvailable: (collection: string, slug: string, except?: string) =>
     call<{ available: boolean; suggestion?: string }>(`/slug-available?${new URLSearchParams({ collection, slug, ...(except ? { except } : {}) })}`),
-  build: () => call<{ pages: number; images: number; removed: number; paths: { type: "page" | "image" | "delete"; path: string }[]; more: number; warnings: string[]; conflicts: string[]; error?: string }>("/build", { method: "POST" }),
+  build: (channel?: Channel) => call<{ pages: number; images: number; removed: number; paths: { type: "page" | "image" | "delete"; path: string }[]; more: number; warnings: string[]; conflicts: string[]; error?: string }>(`/build${channel === "preview" ? "?channel=preview" : ""}`, { method: "POST" }),
   checkAccess: (s: { repo?: string; branch?: string; token?: string }) => call<{ checks: AccessCheck[] }>("/settings/check", { method: "POST", body: JSON.stringify(s) }),
-  ci: (sha: string) => call<{ state: "none" | "running" | "success" | "failed"; runs: { name: string; state: "running" | "success" | "failed"; url: string }[] }>(`/ci?sha=${sha}`),
-  publish: () => call<{ changed: number; ref?: string; warnings?: string[]; remaining?: number }>("/publish", { method: "POST" }),
+  ci: (sha: string, channel?: Channel) => call<{ state: "none" | "running" | "success" | "failed"; runs: { name: string; state: "running" | "success" | "failed"; url: string }[] }>(`/ci?sha=${sha}${channel === "preview" ? "&channel=preview" : ""}`),
+  publish: (channel?: Channel) => call<{ changed: number; ref?: string; warnings?: string[]; remaining?: number }>(`/publish${channel === "preview" ? "?channel=preview" : ""}`, { method: "POST" }),
   counts: () => call<Counts>("/entries/counts"),
   activity: (o: { entry?: string; offset?: number; scheduled?: boolean; limit?: number } = {}) => call<{ items: Activity[]; total: number }>(`/activity?limit=${o.limit ?? 50}&offset=${o.offset ?? 0}${o.scheduled ? "&scheduled=1" : ""}${o.entry ? `&entry=${encodeURIComponent(o.entry)}` : ""}`),
   trash: () => call<{ items: Trashed[]; days: number }>("/trash"),

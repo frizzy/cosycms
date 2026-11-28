@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { api } from "./api";
+  import { api, type Channel } from "./api";
+  import { store } from "./store.svelte";
   import { toast } from "./toast.svelte";
 
   // Two steps. Build renders everything published (references resolved) and shows what would change, sending nothing.
   // Deploy then sends it; images go in batches, so it repeats until nothing is left, and the bar follows.
   type Built = Awaited<ReturnType<typeof api.build>>;
-  let dlg: HTMLDialogElement;
+  let dlg: HTMLDialogElement, channel = $state<Channel>("live");
   let stage = $state<"building" | "ready" | "deploying" | "done" | "failed">("building");
   let built = $state<Built>(), error = $state(""), sent = $state(0), warnings = $state<string[]>([]);
   // Step 3 watches the site's CI for the last commit we pushed, only while this dialog is open.
@@ -15,13 +16,15 @@
   const portal = (node: HTMLElement) => { document.body.appendChild(node); return { destroy: () => node.remove() }; };
   const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
-  export function open() { dlg.showModal(); runBuild(); }
+  export function open(to: Channel = "live") { channel = store.preview ? to : "live"; dlg.showModal(); runBuild(); }
+  const choose = (to: Channel) => { if (to !== channel && stage !== "deploying") { channel = to; watchId++; ciWatch = false; runBuild(); } };
+  const preview = $derived(channel === "preview");
   const POLL_MS = 4000, WAIT_FOR_RUN = 8, GIVE_UP = 150; // a run appears a few seconds after the push; stop after ~10 minutes
   async function watch(sha: string) {
     const me = ++watchId; ci = undefined; ciError = ""; ciWatch = true;
     for (let i = 0; i < GIVE_UP && me === watchId; i++) {
       try {
-        ci = await api.ci(sha);
+        ci = await api.ci(sha, channel);
         if (ci.state === "success" || ci.state === "failed" || (ci.state === "none" && i >= WAIT_FOR_RUN)) break;
       } catch (e) { ciError = (e as Error).message; break; }
       await new Promise((r) => setTimeout(r, POLL_MS));
@@ -30,7 +33,7 @@
   }
   async function runBuild() {
     stage = "building"; error = ""; built = undefined; sent = 0;
-    try { built = await api.build(); stage = built.error ? "failed" : "ready"; error = built.error ?? ""; }
+    try { built = await api.build(channel); stage = built.error ? "failed" : "ready"; error = built.error ?? ""; }
     catch (e) { error = (e as Error).message; stage = "failed"; }
   }
   async function send() {
@@ -38,12 +41,12 @@
     let sha = "";
     try {
       for (;;) {
-        const r = await api.publish();
+        const r = await api.publish(channel);
         sent += r.changed; warnings = r.warnings ?? warnings; sha = r.ref ?? sha;
         if (!r.remaining || !r.changed) break; // nothing left, or no progress (don't loop forever)
       }
       stage = "done";
-      toast(`Deployed ${plural(sent, "change")}`);
+      toast(`${preview ? "Updated preview with" : "Deployed"} ${plural(sent, "change")}`);
       if (sha) watch(sha);
     } catch (e) { error = (e as Error).message; stage = "failed"; }
   }
@@ -51,12 +54,19 @@
 </script>
 
 <dialog bind:this={dlg} use:portal aria-labelledby="dp-title" onclose={() => { watchId++; ciWatch = false; }}>
-  <header><h1 id="dp-title">Deploy</h1><button type="button" class="icon-btn close" aria-label="Close" disabled={stage === "deploying"} onclick={() => dlg.close()}>×</button></header>
+  <header><h1 id="dp-title">{preview ? "Update preview" : "Deploy"}</h1><button type="button" class="icon-btn close" aria-label="Close" disabled={stage === "deploying"} onclick={() => dlg.close()}>×</button></header>
 
+  {#if store.preview}
+    <div class="inline" role="group" aria-label="Where to send it">
+      <button type="button" class={preview ? "ghost" : ""} aria-pressed={!preview} disabled={stage === "deploying"} onclick={() => choose("live")}>Live</button>
+      <button type="button" class={preview ? "" : "ghost"} aria-pressed={preview} disabled={stage === "deploying"} onclick={() => choose("preview")}>Preview</button>
+    </div>
+    <p class="muted">{preview ? "The preview gets everything that is published, plus entries scheduled for later (marked scheduledFor)." : "The live site gets what is published."}</p>
+  {/if}
   <ol class="steps">
     <li class:on={stage === "building"} class:ok={stage !== "building" && !!built}>
       <strong>1. Build</strong>
-      <span class="muted">{#if stage === "building"}Rendering everything that's published…{:else if built}{total ? `${plural(built.pages, "page")}, ${plural(built.images, "image")}, ${built.removed} removed` : "Nothing has changed since the last deploy."}{/if}</span>
+      <span class="muted">{#if stage === "building"}Rendering everything that's {preview ? "published or scheduled" : "published"}…{:else if built}{total ? `${plural(built.pages, "page")}, ${plural(built.images, "image")}, ${built.removed} removed` : `Nothing has changed since the last ${preview ? "preview update" : "deploy"}.`}{/if}</span>
     </li>
     <li class:on={stage === "deploying"} class:ok={stage === "done"}>
       <strong>2. Deploy</strong>
@@ -91,7 +101,8 @@
 
   <div class="dialog-actions">
     <span>
-      {#if stage === "ready" && total}<button type="button" onclick={send}>Deploy {plural(total, "change")}</button>{/if}
+      {#if stage === "ready" && total}<button type="button" onclick={send}>{preview ? "Update preview with" : "Deploy"} {plural(total, "change")}</button>{/if}
+      {#if stage === "done" && preview && store.previewUrl}<a href={store.previewUrl} target="_blank" rel="noopener">Open the preview site</a>{/if}
       {#if stage === "done" || (stage === "ready" && !total)}<button type="button" onclick={() => dlg.close()}>Close</button>{/if}
       {#if stage === "ready" || stage === "failed"} <button type="button" class="ghost" onclick={runBuild}>Build again</button>{/if}
       {#if stage === "failed" && built && !built.error}<button type="button" onclick={send}>Try again</button>{/if}

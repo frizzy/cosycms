@@ -6,7 +6,7 @@
   import { settingsTabs } from "./settingsTabs";
   import { recents, type Recent } from "./recent";
 
-  let { onDeploy }: { onDeploy: () => void } = $props();
+  let { onDeploy }: { onDeploy: (to?: "preview") => void } = $props();
   type Item = { id: string; label: string; hint: string; go: () => void };
   let dlg = $state<HTMLDialogElement>(), input = $state<HTMLInputElement>(), shown = $state(false);
   let q = $state(""), hits = $state<Hit[]>([]), sel = $state(0);
@@ -23,7 +23,8 @@
     { id: "ov", label: "Overview", hint: "Page", go: to("#/") },
     ...store.collections.map((c) => ({ id: `c-${c.key}`, label: c.label, hint: "Collection", go: to(`#/${c.key}`) })),
     ...store.collections.filter((c) => !c.single).map((c) => ({ id: `n-${c.key}`, label: `New entry in ${c.label}`, hint: "Create", go: to(`#/${c.key}/new`) })),
-    { id: "deploy", label: "Deploy to the site", hint: "Action", go: onDeploy },
+    { id: "deploy", label: "Deploy to the site", hint: "Action", go: () => onDeploy() },
+    ...(store.preview ? [{ id: "preview", label: "Update preview", hint: "Action", go: () => onDeploy("preview") }] : []),
     { id: "sched", label: "Schedule", hint: "Page", go: to("#/schedule") },
     { id: "links", label: "Broken links", hint: "Page", go: to("#/link-check") },
     { id: "notif", label: "Notifications", hint: "Page", go: to("#/notifications") },

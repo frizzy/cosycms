@@ -21,7 +21,12 @@ async function prepare(d1: D1Database, targetName: string) {
   // In collections with dates the file also carries publishedAt and revisedAt.
   const dated = new Set(cols.filter((c) => c.dates).map((c) => c.key)), now = new Date();
   const dates = (e: (typeof all)[number]) => (dated.has(e.collection) ? { ...(e.publishedAt ? { publishedAt: e.publishedAt.toISOString() } : {}), ...(e.revisedAt ? { revisedAt: e.revisedAt.toISOString() } : {}) } : {});
-  const rows = all.flatMap((e) => (e.live && !(dated.has(e.collection) && e.publishAt && e.publishAt > now) ? [{ ...e, slug: e.live.slug, data: { ...e.live.data, ...dates(e) } }] : []));
+  // The preview also gets entries scheduled for later, marked with scheduledFor, so they can be seen before they go live.
+  const rows = all.flatMap((e) => {
+    const held = dated.has(e.collection) && e.publishAt && e.publishAt > now;
+    if (held && targetName === "preview") return [{ ...e, slug: e.live?.slug ?? e.slug, data: { ...(e.live?.data ?? e.data), ...dates(e), scheduledFor: e.publishAt!.toISOString() } }];
+    return e.live && !held ? [{ ...e, slug: e.live.slug, data: { ...e.live.data, ...dates(e) } }] : [];
+  });
   const ctx: RenderCtx = { collections: new Map(cols.map((c) => [c.key, { fields: c.fields, format: c.format, bodyField: c.bodyField, folder: c.folder, urlTemplate: c.urlTemplate, dates: c.dates, stats: c.stats }])), entries: new Map(all.map((e) => [e.id, { collection: e.collection, slug: e.live?.slug ?? e.slug, data: e.live?.data ?? e.data }])), blocks: new Map(defs.map((d) => [d.key, d])) };
   const planned = await plan(rows, state, ctx);
   return { db, planned, warnings: draftWarnings(rows, new Map(all.map((e) => [e.id, e])), ctx) };

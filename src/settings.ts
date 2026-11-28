@@ -101,3 +101,25 @@ export async function saveProvider(d1: D1Database, id: string, v: { clientId: st
 export async function clearProvider(d1: D1Database, id: string) {
   await drizzle(d1).delete(settings).where(inArray(settings.key, [...pk(id)]));
 }
+
+/** The preview channel: the same repository and token on another branch (and optionally folder). Null until a preview branch is set. */
+export async function loadPreview(d1: D1Database, env: Env): Promise<(LoadedGithub & { token: string; repo: string; branch: string; from: string }) | null> {
+  const live = await loadGithub(d1, env);
+  const s = Object.fromEntries((await drizzle(d1).select().from(settings).where(inArray(settings.key, ["preview.branch", "preview.dir"]))).map((r) => [r.key, r.value]));
+  if (!s["preview.branch"] || !live.token || !live.repo) return null;
+  return { ...live, token: live.token, repo: live.repo, branch: s["preview.branch"], dir: s["preview.dir"] || live.dir, from: live.branch || "main", name: "preview" } as never;
+}
+
+/** Empty string clears. Pointing preview somewhere else forgets what it was sent, so everything is sent again. */
+export async function savePreview(d1: D1Database, v: { branch?: string; dir?: string }) {
+  const db = drizzle(d1);
+  const was = Object.fromEntries((await db.select().from(settings).where(inArray(settings.key, ["preview.branch", "preview.dir"]))).map((r) => [r.key, r.value]));
+  let moved = false;
+  for (const [k, val] of Object.entries(v)) {
+    if (val === undefined) continue;
+    if (val !== (was[`preview.${k}`] ?? "")) moved = true;
+    if (val === "") await db.delete(settings).where(eq(settings.key, `preview.${k}`));
+    else await db.insert(settings).values({ key: `preview.${k}`, value: val }).onConflictDoUpdate({ target: settings.key, set: { value: val } });
+  }
+  if (moved) await db.delete(publishState).where(eq(publishState.target, "preview"));
+}

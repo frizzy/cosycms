@@ -2,21 +2,21 @@
   import { api } from "./api";
   import { toast } from "./toast.svelte";
   import { saveShortcut } from "./keys";
-  import { store } from "./store.svelte";
-  let repo = $state(""), branch = $state(""), dir = $state(""), token = $state("");
+  import { refreshCollections } from "./store.svelte";
+  let repo = $state(""), branch = $state(""), dir = $state(""), token = $state(""), previewBranch = $state(""), previewDir = $state("");
   let hasToken = $state(false), tokenError = $state(""), loading = $state(true), error = $state("");
   let checks = $state<Awaited<ReturnType<typeof api.checkAccess>>["checks"]>(), checking = $state(false);
 
   const load = () => api.settings().then((s) => {
-    ({ repo = "", branch = "", dir = "", hasToken, tokenError = "" } = s); token = ""; loading = false;
+    ({ repo = "", branch = "", dir = "", previewBranch = "", previewDir = "", hasToken, tokenError = "" } = s); token = ""; loading = false;
   }, (e) => { error = e.message; loading = false; });
   $effect(() => { load(); });
 
-  let siteUrl = $state("");
-  $effect(() => { api.siteUrl().then((r) => (siteUrl = r.url), () => {}); });
+  let siteUrl = $state(""), previewUrl = $state("");
+  $effect(() => { api.siteUrl().then((r) => { siteUrl = r.url; previewUrl = r.previewUrl; }, () => {}); });
   async function saveSite(ev: SubmitEvent) {
     ev.preventDefault(); error = "";
-    try { await api.saveSiteUrl(siteUrl.trim()); store.siteUrl = siteUrl.trim().replace(/\/+$/, ""); toast("Saved"); }
+    try { await api.saveSiteUrl(siteUrl.trim(), previewUrl.trim()); await refreshCollections(); toast("Saved"); }
     catch (e) { error = (e as Error).message; }
   }
 
@@ -29,7 +29,7 @@
   }
   async function save(ev: SubmitEvent) {
     ev.preventDefault(); error = "";
-    try { await api.saveSettings({ repo, branch, dir, token: token || undefined }); toast("Saved"); await load(); }
+    try { await api.saveSettings({ repo, branch, dir, previewBranch: previewBranch.trim(), previewDir: previewDir.trim(), token: token || undefined }); toast("Saved"); await load(); await refreshCollections(); }
     catch (e) { error = (e as Error).message; }
   }
 </script>
@@ -41,6 +41,9 @@
     <label>Site address <input type="url" bind:value={siteUrl} placeholder="https://example.com" />
       <small class="muted">Used for "View on site" on published entries, together with each collection's page address.</small>
     </label>
+    <label>Preview site address <input type="url" bind:value={previewUrl} placeholder="https://preview.example.com" />
+      <small class="muted">Where the preview branch is built, for "View on preview". Only needed if you use a preview branch.</small>
+    </label>
     <div class="actions"><button type="submit">Save</button></div>
   </form>
   <form onsubmit={save} use:saveShortcut>
@@ -48,6 +51,10 @@
     <label>Repository <input bind:value={repo} placeholder="owner/name" /></label>
     <label>Branch <input bind:value={branch} placeholder="main" /></label>
     <label>Folder <input bind:value={dir} placeholder="content (optional)" /></label>
+    <label>Preview branch <input bind:value={previewBranch} placeholder="empty = no preview" />
+      <small class="muted">A second branch of this repository for checking before you publish live. It gets what is published plus what is scheduled, and is created from the branch above the first time. Leave empty if production is handled elsewhere.</small>
+    </label>
+    {#if previewBranch.trim()}<label>Preview folder <input bind:value={previewDir} placeholder="same as the folder above" /></label>{/if}
     <label>Access token
       <input type="password" bind:value={token} autocomplete="off"
         placeholder={hasToken ? "•••••••• saved — leave blank to keep" : "github_pat_…"} />

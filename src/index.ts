@@ -23,7 +23,7 @@ import { Destination, getPassword, getPubkey, getTest, jobScript, loadDest, publ
 import { docBlockNames, docImageIds, docLinkIds, fillPictures } from "./markdown.ts";
 import { sha256 } from "./plan.ts";
 import { build, publish } from "./publish.ts";
-import { loadGithub, saveGithub } from "./settings.ts";
+import { loadGithub, loadPreview, saveGithub, savePreview } from "./settings.ts";
 import { accountRoutes, authRoutes, humanOnly, ownerOnly, requireAuth } from "./auth.ts";
 import { mcpHandler } from "./mcp.ts";
 
@@ -733,12 +733,15 @@ const Settings = z.object({
   branch: z.string().optional(),
   dir: z.string().optional(),
   token: z.string().optional(), // omit to keep the stored token
+  previewBranch: z.string().regex(/^[\w./-]*$/, "a branch name, like cms-preview").optional(), // empty = no preview
+  previewDir: z.string().optional(),
 });
 
 // The token is write-only: it is never sent back to the browser.
 app.get("/settings", async (c) => {
   const { token, tokenError, ...rest } = await loadGithub(c.env.DB, c.env);
-  return c.json({ ...rest, hasToken: !!token || !!tokenError, tokenError });
+  const p = Object.fromEntries((await db(c).select().from(settings).where(inArray(settings.key, ["preview.branch", "preview.dir"]))).map((r) => [r.key, r.value]));
+  return c.json({ ...rest, previewBranch: p["preview.branch"] ?? "", previewDir: p["preview.dir"] ?? "", hasToken: !!token || !!tokenError, tokenError });
 });
 
 // Tries the saved token and repo, or whatever is typed in the form but not saved yet.
@@ -753,12 +756,19 @@ app.post("/settings/check", ownerOnly, async (c) => {
 });
 
 // The site's address (https://example.com), so "View on site" can turn a collection's page address into a link.
-app.get("/settings/site", async (c) => c.json({ url: (await db(c).select().from(settings).where(eq(settings.key, "site.url")))[0]?.value ?? "" }));
+app.get("/settings/site", async (c) => {
+  const s = Object.fromEntries((await db(c).select().from(settings).where(inArray(settings.key, ["site.url", "site.preview"]))).map((r) => [r.key, r.value]));
+  return c.json({ url: s["site.url"] ?? "", previewUrl: s["site.preview"] ?? "", preview: !!(await loadPreview(c.env.DB, c.env)) });
+});
 app.put("/settings/site", ownerOnly, async (c) => {
-  const input = z.object({ url: z.url({ protocol: /^https?$/ }).or(z.literal("")) }).safeParse(await c.req.json().catch(() => ({})));
+  const addr = z.url({ protocol: /^https?$/ }).or(z.literal(""));
+  const input = z.object({ url: addr, previewUrl: addr.optional() }).safeParse(await c.req.json().catch(() => ({})));
   if (!input.success) return c.json({ error: "Use a full address like https://example.com" }, 400);
-  const url = input.data.url.replace(/\/+$/, "");
-  await (url ? db(c).insert(settings).values({ key: "site.url", value: url }).onConflictDoUpdate({ target: settings.key, set: { value: url } }) : db(c).delete(settings).where(eq(settings.key, "site.url")));
+  for (const [key, v] of [["site.url", input.data.url], ["site.preview", input.data.previewUrl]] as const) {
+    const url = v?.replace(/\/+$/, "");
+    if (url === undefined) continue;
+    await (url ? db(c).insert(settings).values({ key, value: url }).onConflictDoUpdate({ target: settings.key, set: { value: url } }) : db(c).delete(settings).where(eq(settings.key, key)));
+  }
   await log(c, { action: "settings.save", label: "Site address" });
   return c.body(null, 204);
 });
@@ -766,21 +776,25 @@ app.put("/settings/site", ownerOnly, async (c) => {
 app.put("/settings", ownerOnly, async (c) => {
   const input = Settings.safeParse(await c.req.json());
   if (!input.success) return c.json(input.error.flatten(), 400);
-  try { await saveGithub(c.env.DB, input.data, c.env); } catch (e) { return c.json({ error: (e as Error).message }, 400); }
+  const { previewBranch, previewDir, ...github } = input.data;
+  try { await saveGithub(c.env.DB, github, c.env); await savePreview(c.env.DB, { branch: previewBranch, dir: previewDir }); } catch (e) { return c.json({ error: (e as Error).message }, 400); }
   await log(c, { action: "settings.save", label: "Deploy target" });
   return c.body(null, 204);
 });
 
-app.post("/build", humanOnly, async (c) => c.json(await build(c.env.DB, "github")));
+// Two channels: live (the default) and, when a preview branch is set, preview (what is published plus what is scheduled).
+const channelName = (c: { req: { query(k: string): string | undefined } }) => (c.req.query("channel") === "preview" ? "preview" : "github");
+app.post("/build", humanOnly, async (c) => c.json(await build(c.env.DB, channelName(c))));
 
 app.post("/publish", humanOnly, async (c) => {
-  const { token, tokenError, repo, branch, dir } = await loadGithub(c.env.DB, c.env);
+  const preview = channelName(c) === "preview";
+  const { token, tokenError, repo, branch, dir, ...rest } = preview ? ((await loadPreview(c.env.DB, c.env)) ?? {} as Partial<NonNullable<Awaited<ReturnType<typeof loadPreview>>>>) : await loadGithub(c.env.DB, c.env);
   if (tokenError) return c.json({ error: tokenError }, 500);
-  if (!token || !repo) return c.json({ error: "GitHub target not configured — add a repo and token in Settings" }, 400);
+  if (!token || !repo || !branch && preview) return c.json({ error: preview ? "Preview isn't set up: add a preview branch in Settings" : "GitHub target not configured — add a repo and token in Settings" }, 400);
   try {
-    const r = await publish(c.env.DB, githubTarget({ token, repo, branch, dir }, fetch, r2Store(c.env.BLOBS)));
-    await log(c, { action: "deploy", detail: r.changed ? `${r.changed} file${r.changed === 1 ? "" : "s"}` : "nothing new" });
-    if (r.ref) await watchBuild(c.env.DB, r.ref);
+    const r = await publish(c.env.DB, githubTarget({ token, repo, branch, dir, ...(preview ? { name: "preview", from: (rest as { from?: string }).from } : {}) }, fetch, r2Store(c.env.BLOBS)));
+    await log(c, { action: "deploy", detail: `${preview ? "preview: " : ""}${r.changed ? `${r.changed} file${r.changed === 1 ? "" : "s"}` : "nothing new"}` });
+    if (r.ref) await watchBuild(c.env.DB, r.ref, preview ? "preview" : undefined);
     return c.json(r);
   }
   catch (e) { return c.json({ error: (e as Error).message }, 424); }
@@ -790,7 +804,7 @@ app.post("/publish", humanOnly, async (c) => {
 app.get("/ci", humanOnly, async (c) => {
   const sha = c.req.query("sha") ?? "";
   if (!/^[0-9a-f]{40}$/.test(sha)) return c.json({ error: "sha must be a full commit id" }, 400);
-  const { token, tokenError, repo, branch, dir } = await loadGithub(c.env.DB, c.env);
+  const { token, tokenError, repo, branch, dir } = channelName(c) === "preview" ? ((await loadPreview(c.env.DB, c.env)) ?? {}) : await loadGithub(c.env.DB, c.env);
   if (tokenError || !token || !repo) return c.json({ error: tokenError ?? "GitHub target not configured" }, 400);
   try { return c.json(await githubRuns({ token, repo, branch, dir }, sha)); }
   catch (e) {
@@ -857,7 +871,8 @@ const handlers = (env: Env["Bindings"]) => ({
   },
   // Follows the site's build for one deploy until it finishes, then records the result. Polls about once a minute (a tick is a minute apart).
   "ci.check": async (job: Job) => {
-    const { token, repo, branch, dir } = await loadGithub(env.DB, env);
+    const prev = job.payload?.[1] === "preview", ckind = prev ? "ci-preview" : "ci", what = prev ? "Preview build" : "Site build";
+    const { token, repo, branch, dir } = (prev ? await loadPreview(env.DB, env) : await loadGithub(env.DB, env)) ?? {};
     if (!token || !repo) return;
     const o = { token, repo, branch, dir }, age = Date.now() - (Date.parse(job.payload?.[0] ?? "") || Date.now()), short = job.ref.slice(0, 7);
     let st;
@@ -869,7 +884,7 @@ const handlers = (env: Env["Bindings"]) => ({
       return;
     }
     if (st.state === "running" || (st.state === "none" && age < 3 * 60_000)) { // not finished, or the run hasn't appeared yet
-      if (age > 30 * 60_000) await notify(env.DB, { kind: "ci", ref: job.ref, level: "error", title: "Site build didn't finish", body: `Deploy ${short} was still running after 30 minutes.`, link: `https://github.com/${repo}/commit/${job.ref}` });
+      if (age > 30 * 60_000) await notify(env.DB, { kind: ckind, ref: job.ref, level: "error", title: `${what} didn't finish`, body: `Deploy ${short} was still running after 30 minutes.`, link: `https://github.com/${repo}/commit/${job.ref}` });
       else await setJob(env.DB, job.kind, job.ref, new Date(Date.now() + 45_000), job.payload);
       return;
     }
@@ -877,16 +892,16 @@ const handlers = (env: Env["Bindings"]) => ({
     const run = st.runs.find((r) => r.state === "failed") ?? st.runs[0];
     if (st.state === "failed") {
       const step = await githubFailedStep(o, run.id).catch(() => undefined);
-      await notify(env.DB, { kind: "ci", ref: job.ref, level: "error", title: "Site build failed", body: `Deploy ${short}${step ? `: ${step} failed` : ""}.`, link: run.url });
+      await notify(env.DB, { kind: ckind, ref: job.ref, level: "error", title: `${what} failed`, body: `Deploy ${short}${step ? `: ${step} failed` : ""}.`, link: run.url });
     } else {
-      await db({ env }).update(notifications).set({ readAt: new Date() }).where(and(eq(notifications.kind, "ci"), eq(notifications.level, "error"), isNull(notifications.readAt))); // a passing build clears earlier failures
-      if (await successWanted(env.DB)) await notify(env.DB, { kind: "ci", ref: job.ref, level: "success", title: "Site build passed", body: `Deploy ${short}.`, link: run.url });
+      await db({ env }).update(notifications).set({ readAt: new Date() }).where(and(eq(notifications.kind, ckind), eq(notifications.level, "error"), isNull(notifications.readAt))); // a passing build clears earlier failures
+      if (await successWanted(env.DB)) await notify(env.DB, { kind: ckind, ref: job.ref, level: "success", title: `${what} passed`, body: `Deploy ${short}.`, link: run.url });
     }
   },
 });
 
 /** After a deploy, follow its build (see ci.check). */
-const watchBuild = (d1: D1Database, sha: string) => setJob(d1, "ci.check", sha, new Date(Date.now() + 20_000), [new Date().toISOString()]);
+const watchBuild = (d1: D1Database, sha: string, channel?: "preview") => setJob(d1, "ci.check", sha, new Date(Date.now() + 20_000), [new Date().toISOString(), ...(channel ? [channel] : [])]);
 /** One tick: run what is due, then once more for the jobs that first pass queued (the deploy after a publish). */
 export async function tick(env: Env["Bindings"]) {
   const h = handlers(env), failed = async (job: Job, error: string) => {

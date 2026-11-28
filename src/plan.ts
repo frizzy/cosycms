@@ -62,7 +62,7 @@ const imageTag = (f?: Field) => (f?.type === "richtext" ? f.imageComponent : und
 
 // The two dates a collection with publish dates adds to what it publishes.
 const STAT_FIELDS = STAT_KEYS.map((key) => ({ key, label: key, type: "number" as const })) as unknown as Field[];
-const DATE_FIELDS = (["publishedAt", "revisedAt"] as const).map((key) => ({ key, label: key, type: "datetime" as const })) as unknown as Field[];
+const DATE_FIELDS = (["publishedAt", "revisedAt", "scheduledFor"] as const).map((key) => ({ key, label: key, type: "datetime" as const })) as unknown as Field[];
 
 export function render(e: PublishedEntry, ctx?: RenderCtx) {
   const col = ctx?.collections.get(e.collection), path = outPath(e, col);

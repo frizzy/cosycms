@@ -558,3 +558,19 @@ test("a collection with stats publishes wordCount and readingTime, in JSON and a
   assert.equal("wordCount" in JSON.parse(render({ id: "p", collection: "posts", slug: "a", data: { title: "T", body } }, { collections: new Map([["posts", { fields }]]), entries: new Map() }).content), false, "off by default");
   assert.equal(CollectionCreate.safeParse({ key: "x", label: "X", stats: true, fields: [{ key: "wordCount", label: "W", type: "number" }] }).success, false, "a field can't shadow the stat keys");
 });
+
+test("a preview branch is created from the live one the first time, and scheduledFor reaches the file", async () => {
+  const calls: string[] = [];
+  const fake: typeof fetch = async (url, init) => {
+    const u = String(url).split("/repos/o/r/")[1], method = init?.method ?? "GET";
+    calls.push(`${method} ${u}`);
+    if (u === "git/ref/heads/cms-preview") return new Response("nope", { status: 404 });
+    return new Response(JSON.stringify(u.startsWith("git/ref/") ? { object: { sha: "H" } } : u.startsWith("git/commits/") ? { tree: { sha: "BT" } } : u === "git/trees" ? { sha: "NT" } : u === "git/commits" ? { sha: "NC" } : {}));
+  };
+  const ref = await githubTarget({ token: "t", repo: "o/r", branch: "cms-preview", from: "cms", name: "preview" }, fake).publish([{ type: "upsert", id: "1", path: "a.json", content: "{}" }]);
+  assert.equal(ref, "NC");
+  assert.ok(calls.includes("GET git/ref/heads/cms") && calls.includes("POST git/refs"));
+  const ctx: RenderCtx = { collections: new Map([["posts", { fields: [], dates: true }]]), entries: new Map(), blocks: new Map() };
+  const out = render({ id: "1", collection: "posts", slug: "a", data: { scheduledFor: "2030-01-01T00:00:00.000Z" } }, ctx);
+  assert.match(out.content, /"scheduledFor"/);
+});

@@ -89,8 +89,9 @@ const baseDef = z.object({
   fields: fieldsSchema,
 });
 
-const checkSlugSource = (v: { slugSource?: string | null; titleField?: string | null; thumbField?: string | null; bodyField?: string | null; format?: string | null; folder?: string | null; stats?: boolean; fields: Field[] }, ctx: z.RefinementCtx) => {
+const checkSlugSource = (v: { dates?: boolean; slugSource?: string | null; titleField?: string | null; thumbField?: string | null; bodyField?: string | null; format?: string | null; folder?: string | null; stats?: boolean; fields: Field[] }, ctx: z.RefinementCtx) => {
   if (v.stats && v.fields.some((f) => f.key === "wordCount" || f.key === "readingTime")) ctx.addIssue({ code: "custom", message: "wordCount and readingTime are written by the word count setting; rename your field or turn the setting off", path: ["stats"] });
+  if (v.dates && v.fields.some((f) => f.key === "scheduledFor")) ctx.addIssue({ code: "custom", message: "scheduledFor is written into the preview of scheduled entries; rename your field", path: ["dates"] });
   if (v.folder && folderError(v.folder, false)) ctx.addIssue({ code: "custom", message: folderError(v.folder, false)!, path: ["folder"] });
   if (v.bodyField && (!(v.format === "markdown" || v.format === "mdx") || !v.fields.some((f) => f.key === v.bodyField && f.type === "richtext")))
     ctx.addIssue({ code: "custom", message: `body field "${v.bodyField}" must be a rich text field, and only applies to Markdown or MDX`, path: ["bodyField"] });

@@ -184,4 +184,4 @@
 <Lightbox />
 <ConfirmDialog />
 <DeployDialog bind:this={deploy} />
-<Palette bind:this={palette} onDeploy={() => deploy.open()} />
+<Palette bind:this={palette} onDeploy={(to) => deploy.open(to)} />

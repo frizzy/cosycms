@@ -133,10 +133,12 @@
   let usage = $state<Used[]>([]), links = $state<Used[]>([]), edited = $state<{ actor: string; at: string } | null>(null), broken = $state<LinkProblem[]>([]);
   $effect(() => { seenAt; if (id) { api.usage(id).then((r) => { usage = r.items; links = r.links; edited = r.edited; }, () => {}); api.linkCheck(id).then((r) => (broken = r), () => {}); } }); // seenAt changes on every save, so this refreshes then too
   let liveSlug = $state<string | undefined>();
-  const siteLink = $derived.by(() => {
-    const t = published && liveSlug && c.urlTemplate?.replace("{slug}", liveSlug);
-    return !t ? null : /^https?:/.test(t) ? t : store.siteUrl ? store.siteUrl + t : null;
-  });
+  const pageAt = (base: string | undefined, slug: string | undefined) => {
+    const t = slug && c.urlTemplate?.replace("{slug}", slug);
+    return !t ? null : /^https?:/.test(t) ? t : base ? base + t : null;
+  };
+  const siteLink = $derived(published ? pageAt(store.siteUrl, liveSlug) : null);
+  const previewLink = $derived(published || sched ? pageAt(store.previewUrl, liveSlug ?? snap?.slug) : null); // the preview has what is published and what is scheduled
   const collLabel = (key: string) => store.collections.find((x) => x.key === key)?.label ?? key;
 
   // Saving only ever changes the draft. Returns the entry's id when it saved.
@@ -338,6 +340,7 @@
       {#if id && published && pending && !dirty}<button type="button" class="ghost" onclick={revert}>Discard draft changes</button>{/if}
       {#if id && published}<button type="button" class="ghost" onclick={unpublish}>Unpublish</button>{/if}
       <button type="button" class="ghost" onclick={() => (previewing = true)}>Preview</button>
+      {#if previewLink}<button type="button" class="ghost" onclick={() => window.open(previewLink, "_blank", "noopener")}>View on preview</button>{/if}
       {#if siteLink}<button type="button" class="ghost" onclick={() => window.open(siteLink, "_blank", "noopener")}>{pending ? "View live version" : "View on site"}</button>{/if}
       {#if id && !c.single}<button type="button" class="ghost" onclick={duplicate}>Duplicate</button>{/if}
       {#if id}<button type="button" class="danger" onclick={remove}>Delete</button>{/if}

@@ -195,3 +195,17 @@ test("site address is saved without a trailing slash, and an entry reports the s
   await call("PUT", `/entries/${id}`, { collection: "posts", slug: "renamed", data: { title: "Hello" } });
   assert.equal((await call("GET", `/entries/${id}`)).body.liveSlug, "hello");
 });
+
+test("preview gets what is published plus what is scheduled; live gets only what is published", async () => {
+  const { call, id } = await setup();
+  await call("POST", `/entries/${id}/publish`);
+  const later = (await call("POST", "/entries", { collection: "posts", slug: "later", data: { title: "Later" }, publishAt: hours(48) })).body.id;
+  await call("POST", "/entries", { collection: "posts", slug: "plain-draft", data: { title: "Draft" } });
+  const paths = async (q: string) => (await call("POST", `/build${q}`)).body.paths.map((p: { path: string }) => p.path).sort();
+  assert.deepEqual(await paths(""), ["posts/hello.json"]);
+  assert.deepEqual(await paths("?channel=preview"), ["posts/hello.json", "posts/later.json"]);
+  assert.ok(later);
+  assert.equal((await call("POST", "/publish?channel=preview")).status, 400, "no preview branch yet");
+  assert.equal((await call("PUT", "/settings", { previewBranch: "cms-preview" })).status, 204);
+  assert.equal((await call("GET", "/settings/site")).body.preview, false, "a preview branch needs a repository and token first");
+});
