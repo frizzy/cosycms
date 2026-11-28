@@ -6,7 +6,7 @@
   import { settingsTabs } from "./settingsTabs";
   import { recents, type Recent } from "./recent";
 
-  let { onDeploy }: { onDeploy: (to?: "preview") => void } = $props();
+  let { onDeploy, onShortcuts }: { onDeploy: (to?: "preview") => void; onShortcuts: () => void } = $props();
   type Item = { id: string; label: string; hint: string; go: () => void };
   let dlg = $state<HTMLDialogElement>(), input = $state<HTMLInputElement>(), shown = $state(false);
   let q = $state(""), hits = $state<Hit[]>([]), sel = $state(0);
@@ -26,6 +26,7 @@
     { id: "deploy", label: "Deploy to the site", hint: "Action", go: () => onDeploy() },
     ...(store.preview ? [{ id: "preview", label: "Update preview", hint: "Action", go: () => onDeploy("preview") }] : []),
     { id: "sched", label: "Schedule", hint: "Page", go: to("#/schedule") },
+    { id: "keys", label: "Keyboard shortcuts", hint: "Help", go: onShortcuts },
     { id: "links", label: "Broken links", hint: "Page", go: to("#/link-check") },
     { id: "notif", label: "Notifications", hint: "Page", go: to("#/notifications") },
     { id: "act", label: "Activity", hint: "Page", go: to("#/activity") },

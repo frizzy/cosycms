@@ -22,6 +22,7 @@ import { weakAlt } from "./alt.ts";
 import { Destination, getPassword, getPubkey, getTest, jobScript, loadDest, publicView, saveDest, setPubkey, setTest } from "./backup.ts";
 import { docBlockNames, docImageIds, docLinkIds, fillPictures } from "./markdown.ts";
 import { sha256 } from "./plan.ts";
+import { contentResponse, createToken, listTokens, revokeToken } from "./content.ts";
 import { build, publish } from "./publish.ts";
 import { loadGithub, loadPreview, saveGithub, savePreview } from "./settings.ts";
 import { accountRoutes, authRoutes, humanOnly, ownerOnly, requireAuth } from "./auth.ts";
@@ -773,6 +774,21 @@ app.put("/settings/site", ownerOnly, async (c) => {
   return c.body(null, 204);
 });
 
+// Tokens for the read-only content API (src/content.ts). The secret is shown once, when it is made.
+app.get("/settings/content-tokens", humanOnly, ownerOnly, async (c) => c.json((await listTokens(c.env.DB)).map(({ hash: _, ...t }) => t).sort((a, b) => b.at.localeCompare(a.at))));
+app.post("/settings/content-tokens", humanOnly, ownerOnly, async (c) => {
+  const b = z.object({ label: z.string().trim().min(1).max(60), channel: z.enum(["live", "preview"]) }).safeParse(await c.req.json().catch(() => null));
+  if (!b.success) return c.json({ error: "Give it a name and a channel." }, 400);
+  const t = await createToken(c.env.DB, b.data.label, b.data.channel);
+  await log(c, { action: "settings.save", label: "Content token", detail: `${b.data.label} (${b.data.channel})` });
+  return c.json(t, 201);
+});
+app.delete("/settings/content-tokens/:id", humanOnly, ownerOnly, async (c) => {
+  await revokeToken(c.env.DB, c.req.param("id"));
+  await log(c, { action: "settings.save", label: "Content token", detail: "revoked" });
+  return c.body(null, 204);
+});
+
 app.put("/settings", ownerOnly, async (c) => {
   const input = Settings.safeParse(await c.req.json());
   if (!input.success) return c.json(input.error.flatten(), 400);
@@ -958,6 +974,8 @@ root.post("/api/backup/pubkey", async (c) => {
   await setPubkey(c.env.DB, b.data.key);
   return c.body(null, 204);
 });
+root.get("/api/content", (c) => contentResponse(c.env, c.req.raw));
+root.get("/api/content/blob/:file", (c) => contentResponse(c.env, c.req.raw));
 root.post("/api/tick", async (c) => automationDenied(c) ?? c.json(await tick(c.env)));
 root.post("/api/backup/report", async (c) => {
   const denied = automationDenied(c);

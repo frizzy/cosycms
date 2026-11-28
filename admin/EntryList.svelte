@@ -10,6 +10,7 @@
   import { ask } from "./confirm.svelte";
   import LiveIcon from "./LiveIcon.svelte";
   import ClockIcon from "./ClockIcon.svelte";
+  import { typing } from "./keys";
   let { collection }: { collection: string } = $props();
   const col = $derived(store.collections.find((c) => c.key === collection)!);
   const schema = $derived(dataSchema(col));
@@ -76,6 +77,14 @@
   }
 
   // Selection for bulk actions. It is cleared whenever the search, filter or sort changes, so an action never reaches an entry that isn't on screen.
+  let cur = $state(""); // the row the keyboard is on (j / k)
+  const move = (by: number) => { const i = shown?.findIndex((x) => x.id === cur) ?? -1, n = shown?.[Math.min(Math.max(i + by, 0), (shown?.length ?? 1) - 1)]; if (n) { cur = n.id; document.getElementById(`row-${n.id}`)?.scrollIntoView({ block: "nearest" }); } };
+  const onkey = (e: KeyboardEvent) => {
+    if (typing(e) || !shown?.length || grid) return;
+    if (e.key === "j" || e.key === "k") move(e.key === "j" ? 1 : -1);
+    else if ((e.key === "Enter" || e.key === "o") && cur) location.hash = `#/${collection}/${cur}`;
+    else if (e.key === "x" && cur) toggle(cur);
+  };
   let sel = $state<string[]>([]), reload = $state(0), working = $state(false), failed = $state<{ id: string; label: string; error: string }[]>([]);
   const toggle = (id: string) => (sel = sel.includes(id) ? sel.filter((x) => x !== id) : [...sel, id]);
   const verb = { publish: "Published", unpublish: "Unpublished", delete: "Deleted" } as const;
@@ -269,7 +278,7 @@
     </tr></thead>
     <tbody>
       {#each shown as e (e.id)}
-        <tr class:picked={sel.includes(e.id)}>
+        <tr id="row-{e.id}" class:picked={sel.includes(e.id)} class:cur={cur === e.id}>
           <td class="c-pick"><input type="checkbox" class="pick" aria-label="Select {label(e)}" checked={sel.includes(e.id)} onchange={() => toggle(e.id)} /></td>
           <td class="name"><div class="cell">
             {#if col.thumbField}{#if e.thumb}<img class="thumb" src={blobUrl(e.thumb)} alt="" loading="lazy" />{:else}<span class="thumb none" aria-hidden="true"></span>{/if}{/if}
@@ -294,4 +303,4 @@
   {/if}
 {/if}
 
-<svelte:window onscroll={measure} onresize={measure} />
+<svelte:window onscroll={measure} onresize={measure} onkeydown={onkey} />

@@ -55,5 +55,10 @@ export function testEnv() {
     const res = await app.fetch(new Request(`http://localhost${path}`, { method, headers: { authorization: "Bearer test-tick-token", ...(body === undefined ? {} : { "content-type": "application/json" }) }, body: body === undefined ? undefined : JSON.stringify(body) }), env, { waitUntil() {}, passThroughOnException() {} } as never);
     return { status: res.status, text: await res.text() };
   }
-  return { script, db, env: env as unknown as { BLOBS: { put(k: string, b: Uint8Array, o: { httpMetadata: { contentType: string } }): Promise<void> } }, call, owner, member, tick: () => tick(env) };
+  /** A request with only a bearer token, like a site pulling its content. */
+  async function bearer(path: string, token?: string) {
+    const res = await app.fetch(new Request(`http://localhost${path}`, { headers: token ? { authorization: `Bearer ${token}` } : {} }), env, { waitUntil() {}, passThroughOnException() {} } as never);
+    return { status: res.status, body: (await res.json().catch(() => null)) as any };
+  }
+  return { script, bearer, db, env: env as unknown as { BLOBS: { put(k: string, b: Uint8Array, o: { httpMetadata: { contentType: string } }): Promise<void> } }, call, owner, member, tick: () => tick(env) };
 }

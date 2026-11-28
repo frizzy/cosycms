@@ -34,6 +34,13 @@
   // The list is fetched each time it opens, so entries added elsewhere show up.
   export function open() { mode = "pick"; q = ""; dlg.showModal(); load(); }
 
+  // A picture pasted or dropped into the editor: upload it, then ask for the rest (alt text, credit) before it joins the library.
+  export async function openWith(file: File) {
+    if (!fileField) return;
+    draft = {}; error = ""; mode = "create"; if (!dlg.open) dlg.showModal();
+    try { draft[fileField.key] = await api.upload(file); } catch (e) { error = (e as Error).message; }
+  }
+
   function choose(id: string) {
     const ids = multiple ? (selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]) : [id];
     onchange(ids, entries);

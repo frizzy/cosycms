@@ -8,12 +8,12 @@ import type { Change, Target } from "./targets.ts";
 const MAX_IMAGES_PER_PUBLISH = 20;
 
 /** Renders everything published and compares it with what the target last received. Nothing is sent or recorded. */
-async function prepare(d1: D1Database, targetName: string) {
+async function prepare(d1: D1Database, targetName: string, fresh = false) {
   const db = drizzle(d1);
   const [all, cols, state, defs] = await Promise.all([
     db.select().from(entries),
     db.select().from(collections),
-    db.select().from(publishState).where(eq(publishState.target, targetName)),
+    fresh ? Promise.resolve([]) : db.select().from(publishState).where(eq(publishState.target, targetName)),
     db.select().from(blocks),
   ]);
   // The site gets each entry's published version (`live`), never its working draft.
@@ -70,4 +70,10 @@ export async function publish(d1: D1Database, target: Target, only?: string[]) {
   ];
   if (writes.length) await db.batch(writes as [(typeof writes)[0], ...typeof writes]);
   return { changed: changes.length, ref, warnings, remaining: later.size };
+}
+
+/** Every file a channel would have, whatever it was last sent: for the read-only content API. Text files carry their content; images the key of the stored file. */
+export async function snapshot(d1: D1Database, channel: "live" | "preview") {
+  const { planned } = await prepare(d1, channel === "preview" ? "preview" : "github", true);
+  return planned.changes.flatMap((c) => (c.type === "upsert" ? [c] : []));
 }

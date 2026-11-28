@@ -75,6 +75,10 @@
     const initial = value;
     const ed = new Editor({
       element: host, editable: !readonly,
+      editorProps: { // a picture pasted or dropped goes to the image library first (the field needs one)
+        handlePaste: (_v, e) => takeImage(e.clipboardData?.files),
+        handleDrop: (_v, e) => takeImage((e as DragEvent).dataTransfer?.files),
+      },
       extensions: [...richExtensions({ replace: (pos) => { replacing = pos; picker?.open(); }, remove: removeImage, href: (id) => (library ? `#/${library}/${id}` : undefined), options: () => !!imageComponent, set: setImage }), ...blockExtensions(blocks, { edit: editBlock, remove: removeBlock })],
       content: typeof initial === "string" ? fromText(initial) : (initial as object | undefined),
       onTransaction: () => queueMicrotask(() => tick++), // deferred: a blur fired while the editor is being torn down must not mutate state mid-teardown
@@ -130,6 +134,12 @@
 
   // Inserts an image from the library; the entry id is what's stored.
   let picker: PickerDialog;
+  function takeImage(files?: FileList | null) {
+    const f = [...(files ?? [])].find((x) => x.type.startsWith("image/"));
+    if (!f || !library || readonly) return false;
+    replacing = undefined; picker?.openWith(f);
+    return true;
+  }
   let replacing: number | undefined; // set while the picker is open to swap an existing image
   function setImage(pos: number, attrs: Record<string, string>) {
     const n = editor?.state.doc.nodeAt(pos);

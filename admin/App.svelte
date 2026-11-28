@@ -10,6 +10,8 @@
   import Logo from "./Logo.svelte";
   import Lightbox from "./Lightbox.svelte";
   import DeployDialog from "./DeployDialog.svelte";
+  import ShortcutsDialog from "./ShortcutsDialog.svelte";
+  import { typing } from "./keys";
   import TemplatesIcon from "./TemplatesIcon.svelte";
   import TemplateList from "./TemplateList.svelte";
   import TemplateBuilder from "./TemplateBuilder.svelte";
@@ -81,11 +83,12 @@
   const col = $derived(store.collections.find((c) => c.key === a));
 
   let acctOpen = $state(false), acctEl = $state<HTMLElement>();
-  let deploy: DeployDialog, palette: Palette;
+  let deploy: DeployDialog, palette: Palette, shortcuts: ShortcutsDialog;
+  $effect(() => { document.title = store.unread ? `(${store.unread}) cosyCMS` : "cosyCMS"; });
   const modKey = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘K" : "Ctrl K";
 </script>
 
-<svelte:window onpointerdown={(e) => { if (acctOpen && acctEl && !acctEl.contains(e.target as Node)) acctOpen = false; }} onkeydown={(e) => { if (e.key === "Escape") { menuOpen = false; acctOpen = false; } if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && store.me) { e.preventDefault(); palette.show(); } }} />
+<svelte:window onpointerdown={(e) => { if (acctOpen && acctEl && !acctEl.contains(e.target as Node)) acctOpen = false; }} onkeydown={(e) => { if (e.key === "Escape") { menuOpen = false; acctOpen = false; } if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k" && store.me) { e.preventDefault(); palette.show(); } if (e.key === "?" && store.me && !typing(e)) shortcuts.show(); }} />
 {#if store.me === undefined}
   <div class="stack" aria-busy="true" aria-label="Loading"><div class="skel" style="height:40px"></div></div>
 {:else if !store.me}
@@ -184,4 +187,5 @@
 <Lightbox />
 <ConfirmDialog />
 <DeployDialog bind:this={deploy} />
-<Palette bind:this={palette} onDeploy={(to) => deploy.open(to)} />
+<Palette bind:this={palette} onDeploy={(to) => deploy.open(to)} onShortcuts={() => shortcuts.show()} />
+<ShortcutsDialog bind:this={shortcuts} />

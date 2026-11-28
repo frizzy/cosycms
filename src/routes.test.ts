@@ -209,3 +209,22 @@ test("preview gets what is published plus what is scheduled; live gets only what
   assert.equal((await call("PUT", "/settings", { previewBranch: "cms-preview" })).status, 204);
   assert.equal((await call("GET", "/settings/site")).body.preview, false, "a preview branch needs a repository and token first");
 });
+
+test("content API: tokens are owner-only and shown once; live and preview tokens see their own channel", async () => {
+  const { call, bearer, id, member } = await setup();
+  await call("POST", `/entries/${id}/publish`);
+  await call("POST", "/entries", { collection: "posts", slug: "later", data: { title: "Later" }, publishAt: hours(48) });
+  assert.equal((await call("POST", "/settings/content-tokens", { label: "Site", channel: "live" }, member)).status, 403);
+  const live = (await call("POST", "/settings/content-tokens", { label: "Site", channel: "live" })).body;
+  const prev = (await call("POST", "/settings/content-tokens", { label: "Preview", channel: "preview" })).body;
+  assert.equal((await bearer("/api/content")).status, 401);
+  assert.equal((await bearer("/api/content", "cosy_c_nope")).status, 401);
+  assert.deepEqual((await bearer("/api/content", live.secret)).body.files.map((f: { path: string }) => f.path), ["posts/hello.json"]);
+  const p = (await bearer("/api/content?prefix=posts/", prev.secret)).body;
+  assert.deepEqual(p.files.map((f: { path: string }) => f.path).sort(), ["posts/hello.json", "posts/later.json"]);
+  assert.match(p.files.find((f: { path: string }) => f.path === "posts/later.json").content, /scheduledFor/);
+  const listed = (await call("GET", "/settings/content-tokens")).body;
+  assert.equal(listed.length, 2); assert.ok(!JSON.stringify(listed).includes("hash") && !JSON.stringify(listed).includes(live.secret));
+  assert.equal((await call("DELETE", `/settings/content-tokens/${live.id}`)).status, 204);
+  assert.equal((await bearer("/api/content", live.secret)).status, 401);
+});

@@ -436,3 +436,4 @@ dialog.preview { width:min(46rem, 94vw); } .pv { display:grid; gap:1.4rem; } .pv
 .toast { display:flex; align-items:center; gap:.9rem; } .toast button { padding:.15rem .7rem; font-size:.85rem; }
 .recover { display:grid; gap:.6rem; } .recover p { margin:0; } .recover .inline { gap:.5rem; }
 .lc { list-style:none; margin:0; padding:0; display:grid; gap:.6rem; } .lc li { display:grid; gap:.1rem; } .lc a { font-weight:500; }
+tr.cur td { background:color-mix(in srgb, var(--accent) 9%, transparent); }

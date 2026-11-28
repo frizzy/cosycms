@@ -8,6 +8,7 @@
   import SearchSettings from "./SearchSettings.svelte";
   import BackupSettings from "./BackupSettings.svelte";
   import HistorySettings from "./HistorySettings.svelte";
+  import ContentApiSettings from "./ContentApiSettings.svelte";
   import ProfileSettings from "./ProfileSettings.svelte";
   import AppearanceSettings from "./AppearanceSettings.svelte";
   import { settingsTabs } from "./settingsTabs";
@@ -26,6 +27,7 @@
 {:else if current === "notifications"}<NotifySettings />
 {:else if current === "search"}<SearchSettings />
 {:else if current === "history"}<HistorySettings />
+{:else if current === "content-api"}<ContentApiSettings />
 {:else if current === "backups"}<BackupSettings />
 {:else if current === "appearance"}<AppearanceSettings />
 {:else}<AppsSettings />{/if}
