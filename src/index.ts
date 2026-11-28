@@ -624,6 +624,38 @@ app.get("/media-health", ownerOnly, async (c) => {
   return c.json(out);
 });
 
+// Link check: hyperlinks in text ("cosy:entry/<id>") and reference fields that point at an entry that is gone, or (for what the site shows) one that isn't published.
+// shortcut: reference fields inside blocks are not read, and outside web addresses are not fetched; add them if broken links turn up there.
+const ENTRY_LINK = /cosy:entry\/([0-9a-f-]{36})/g;
+const targetsOf = (fields: Field[], data: Record<string, unknown>) => new Set([
+  ...[...JSON.stringify(data).matchAll(ENTRY_LINK)].map((m) => m[1]),
+  ...fields.filter((f) => f.type === "reference").flatMap((f) => [data[f.key]].flat().filter((x): x is string => typeof x === "string" && !!x)),
+]);
+async function linkProblems(c: { env: Env["Bindings"] }, only?: string) {
+  const cols = new Map((await db(c).select().from(collections)).map((k) => [k.key, k]));
+  const all = await db(c).select().from(entries);
+  const byId = new Map(all.map((e) => [e.id, e]));
+  const rows: { id: string; collection: string; label: string; where: "live" | "draft"; kind: "missing" | "draft"; target: string; targetLabel: string | null }[] = [];
+  for (const e of all) {
+    const col = cols.get(e.collection);
+    if (!col || (only && e.id !== only)) continue;
+    const label = entryLabel(col.fields, e.data, e.slug, col.titleField), seen = new Set<string>();
+    for (const [where, data] of [["live", e.live?.data], ["draft", e.data]] as const) {
+      if (!data) continue;
+      for (const t of targetsOf(col.fields, data)) {
+        const to = byId.get(t);
+        const kind = !to ? "missing" : where === "live" && to.status !== "published" ? "draft" : null;
+        if (!kind || seen.has(t)) continue;
+        seen.add(t);
+        const tc = to && cols.get(to.collection);
+        rows.push({ id: e.id, collection: e.collection, label, where, kind, target: t, targetLabel: to && tc ? entryLabel(tc.fields, to.data, to.slug, tc.titleField) : null });
+      }
+    }
+  }
+  return rows.sort((a, b) => Number(b.where === "live") - Number(a.where === "live") || a.label.localeCompare(b.label));
+}
+app.get("/link-check", async (c) => c.json(await linkProblems(c, c.req.query("entry"))));
+
 /** Entries that point at this one, with their display title (title field, else slug), split by how: `used` (a reference field, an image, a block) and `linked` (a hyperlink in text, written "cosy:entry/<id>"). One entry can be both. */
 async function pointingAt(c: { env: Env["Bindings"] }, id: string) {
   const rows = await usedBy(c, { id }, 50);
@@ -644,7 +676,9 @@ async function pointingAt(c: { env: Env["Bindings"] }, id: string) {
 // For the editor: "Used in" (referenced by a field, image or block) and "Linked to" (hyperlinked from text). shortcut: up to 50 sources in all; a heavily used image shows the first ones.
 app.get("/entries/:id/usage", async (c) => {
   const [row] = await db(c).select().from(entries).where(eq(entries.id, c.req.param("id")));
-  return row ? c.json(await pointingAt(c, row.id)) : c.json({ error: "not found" }, 404);
+  if (!row) return c.json({ error: "not found" }, 404);
+  const [last] = await db(c).select({ actor: activity.actor, at: activity.at }).from(activity).where(and(eq(activity.entryId, row.id), inArray(activity.action, ["entry.create", "entry.save", "entry.revert", "entry.restore"]))).orderBy(desc(activity.at)).limit(1);
+  return c.json({ ...(await pointingAt(c, row.id)), edited: last ? { actor: last.actor, at: last.at.toISOString() } : null });
 });
 
 /** Deletes an entry unless something still points at it; a message says why not. The copy in the history is what the trash restores. */

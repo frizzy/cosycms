@@ -102,7 +102,7 @@ const checkSlugSource = (v: { slugSource?: string | null; titleField?: string | 
     ctx.addIssue({ code: "custom", message: `title field "${v.titleField}" must be a single-line text field`, path: ["titleField"] });
 };
 
-const RESERVED = ["settings", "collections", "new", "schedule", "activity", "trash", "blocks", "templates", "notifications", "media-health"]; // admin routes
+const RESERVED = ["settings", "collections", "new", "schedule", "activity", "trash", "blocks", "templates", "notifications", "media-health", "link-check"]; // admin routes
 export const CollectionDef = baseDef.superRefine(checkSlugSource);
 export const CollectionCreate = baseDef.extend({
   key: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "lowercase letters, numbers and dashes")

@@ -30,6 +30,8 @@
   import ThemeToggle from "./ThemeToggle.svelte";
   import MediaHealthPage from "./MediaHealthPage.svelte";
   import ImageIcon from "./ImageIcon.svelte";
+  import LinkIcon from "./LinkIcon.svelte";
+  import LinksPage from "./LinksPage.svelte";
   import SchedulePage from "./SchedulePage.svelte";
   import ClockIcon from "./ClockIcon.svelte";
   import UserIcon from "./UserIcon.svelte";
@@ -131,6 +133,7 @@
         <div class="navgap"></div>
         <a href="#/schedule" class="navrow" class:active={a === "schedule"}><ClockIcon size={18} />Schedule</a>
         {#if owner}<a href="#/media-health" class="navrow" class:active={a === "media-health"}><ImageIcon />Media health</a>{/if}
+        <a href="#/link-check" class="navrow" class:active={a === "link-check"}><LinkIcon />Broken links</a>
         <a href="#/activity" class="navrow" class:active={a === "activity"}><ActivityIcon />Activity</a>
         <a href="#/trash" class="navrow" class:active={a === "trash"}><TrashIcon />Trash</a>
         {#if owner}<a href="#/blocks" class="navrow" class:active={a === "blocks"}><BlocksIcon />Blocks</a>{/if}
@@ -150,6 +153,8 @@
       <NotificationsPage />
     {:else if a === "media-health" && owner}
       <MediaHealthPage />
+    {:else if a === "link-check"}
+      <LinksPage />
     {:else if a === "schedule"}
       <SchedulePage />
     {:else if a === "trash"}

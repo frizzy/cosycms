@@ -25,6 +25,7 @@
     ...store.collections.filter((c) => !c.single).map((c) => ({ id: `n-${c.key}`, label: `New entry in ${c.label}`, hint: "Create", go: to(`#/${c.key}/new`) })),
     { id: "deploy", label: "Deploy to the site", hint: "Action", go: onDeploy },
     { id: "sched", label: "Schedule", hint: "Page", go: to("#/schedule") },
+    { id: "links", label: "Broken links", hint: "Page", go: to("#/link-check") },
     { id: "notif", label: "Notifications", hint: "Page", go: to("#/notifications") },
     { id: "act", label: "Activity", hint: "Page", go: to("#/activity") },
     { id: "trash", label: "Trash", hint: "Page", go: to("#/trash") },

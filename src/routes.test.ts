@@ -170,3 +170,18 @@ test("an entry deleted, brought back and deleted again is one item in the Trash,
     assert.equal((await c.call("GET", "/trash")).body.items.length, 0, "back, so nothing in the Trash");
   }
 });
+
+test("link check finds deleted and unpublished targets; usage shows who last edited", async () => {
+  const { call, id } = await setup();
+  const other = (await call("POST", "/entries", { collection: "posts", slug: "other", data: { title: "Other" } })).body.id as string;
+  const link = (to: string) => ({ type: "doc", content: [{ type: "text", text: "x", marks: [{ type: "link", attrs: { href: `cosy:entry/${to}` } }] }] });
+  await call("PUT", `/collections/posts`, { key: "posts", label: "Posts", dates: true, titleField: "title", slugSource: "title", fields: [{ key: "title", label: "Title", type: "text" }, { key: "body", label: "Body", type: "richtext" }] });
+  const put = (body: unknown) => call("PUT", `/entries/${id}`, { collection: "posts", slug: "hello", data: { title: "Hello", body } });
+  assert.equal((await put(link(other))).status, 200);
+  assert.equal((await call("GET", "/link-check")).body.length, 0, "a link to a draft is fine while this one is a draft too");
+  await call("POST", `/entries/${id}/publish`);
+  const bad = (await call("GET", `/link-check?entry=${id}`)).body;
+  assert.deepEqual(bad.map((r: { kind: string; where: string }) => [r.kind, r.where]), [["draft", "live"]]);
+  assert.equal((await call("DELETE", `/entries/${other}`)).status, 409, "deleting a linked entry is refused");
+  assert.ok((await call("GET", `/entries/${id}/usage`)).body.edited.actor);
+});

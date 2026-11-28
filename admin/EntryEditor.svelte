@@ -2,7 +2,8 @@
   import { ask } from "./confirm.svelte";
   import { tick } from "svelte";
   import { capitalise, headingTexts, capitaliseHeadings } from "../src/casing";
-  import { api, type Entry, type Used } from "./api";
+  import { api, type Entry, type LinkProblem, type Used } from "./api";
+  import { person } from "./people";
   import ClockIcon from "./ClockIcon.svelte";
   import ChangeDialog, { type ChangeView } from "./ChangeDialog.svelte";
   import { fieldChanges, type Change } from "../src/diff";
@@ -129,8 +130,8 @@
   });
 
   // Where this entry is used (an image in a post, a link from another entry): shown below the form when there is anything.
-  let usage = $state<Used[]>([]), links = $state<Used[]>([]);
-  $effect(() => { if (id) api.usage(id).then((r) => { usage = r.items; links = r.links; }, () => {}); });
+  let usage = $state<Used[]>([]), links = $state<Used[]>([]), edited = $state<{ actor: string; at: string } | null>(null), broken = $state<LinkProblem[]>([]);
+  $effect(() => { seenAt; if (id) { api.usage(id).then((r) => { usage = r.items; links = r.links; edited = r.edited; }, () => {}); api.linkCheck(id).then((r) => (broken = r), () => {}); } }); // seenAt changes on every save, so this refreshes then too
   const collLabel = (key: string) => store.collections.find((x) => x.key === key)?.label ?? key;
 
   // Saving only ever changes the draft. Returns the entry's id when it saved.
@@ -323,7 +324,9 @@
       {#if publishedAt}<small class="muted">First published {new Date(publishedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}{revisedAt && revisedAt !== publishedAt ? `, last revised ${new Date(revisedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}` : ""}.</small>{/if}
     {/if}
     {#each c.fields as f (f.key)}{#key f.type === "richtext" ? rev : 0}<FieldInput field={f} {collection} bind:value={data[f.key]} />{/key}{/each}
+    {#if broken.length}<p class="notice">{#each broken as b}{b.kind === "missing" ? "A link in this entry points at an entry that was deleted." : `A link on the live site points at “${b.targetLabel}”, which isn't published.`} {/each}</p>{/if}
     {#if c.stats}{@const st = entryStats(c.fields, data, c.bodyField)}<p class="muted stats">{st.wordCount.toLocaleString()} {st.wordCount === 1 ? "word" : "words"}{st.readingTime ? ` · ${st.readingTime} min read` : ""}</p>{/if}
+    {#if edited}{@const who = person(edited.actor)}<p class="muted stats">Last edited by {who.name}, {new Date(edited.at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</p>{/if}
     <div class="actions">
       <button type="submit" class={id && !later && (!published || pending || dirty) ? "ghost" : ""} disabled={saving}>{later ? "Save and schedule" : "Save draft"}</button>
       {#if id && !later && (!published || pending || dirty)}<button type="button" onclick={publish} disabled={saving}>{published ? "Publish changes" : "Publish"}</button>{/if}

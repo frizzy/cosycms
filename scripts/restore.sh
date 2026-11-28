@@ -35,7 +35,7 @@ n = lambda t: c.execute(f"select count(*) from {t}").fetchone()[0]
 print(f"database: integrity ok, {n('entries')} entries, {n('users')} people")
 PY
     else echo "database: not opened (python3 isn't installed here), files only"; fi
-    echo "$(rc snapshots --compact --tag cosycms --host cosycms | tail -3 | head -1 | cut -c1-70)"
+    rc snapshots --compact --tag cosycms --host cosycms | grep -E '^[0-9a-f]{8} ' | tail -1 | cut -c1-70
     echo "OK: $SNAP snapshot restored to a scratch folder: $FILES files, $SIZE. Nothing on this server was changed."
     exit 0
   fi

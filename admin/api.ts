@@ -46,6 +46,7 @@ export type HealthRow = { id: string; collection: string; label: string; file: {
 export type MediaHealth = { total: number; counts: { unused: number; large: number; weakAlt: number }; unused: HealthRow[]; large: HealthRow[]; weakAlt: (HealthRow & { alt: string; altKey: string; why: string })[] };
 export type BackupDest = { type: "r2"; accountId: string; bucket: string; accessKeyId: string; hasSecret?: boolean; prefix?: string } | { type: "ssh"; host: string; port?: number; user: string; path: string };
 export type BackupState = { dest: BackupDest | null; pubkey: string | null; hasPassword: boolean; test: { state: "pending" | "running" | "ok" | "failed"; at: string; detail?: string } | null };
+export type LinkProblem = { id: string; collection: string; label: string; where: "live" | "draft"; kind: "missing" | "draft"; target: string; targetLabel: string | null };
 export type Used = { id: string; collection: string; slug: string; title: string };
 export type Trashed = { id: string; at: string; actor: string; collection: string; label: string; entryId: string };
 export type Counts = Record<string, { drafts: number; edited: number }>;
@@ -102,7 +103,8 @@ export const api = {
   matching: (collection: string, q: string, filter: string) => call<{ ids: string[]; total: number }>(`/entries/matching?${new URLSearchParams({ collection, q, filter })}`),
   list: (collection?: string) => call<Entry[]>("/entries" + (collection ? `?collection=${encodeURIComponent(collection)}` : "")),
   unused: (collection: string) => call<{ items: Entry[]; total: number; scanned: number }>(`/collections/${collection}/unused`, { method: "POST" }),
-  usage: (id: string) => call<{ items: Used[]; links: Used[] }>(`/entries/${id}/usage`),
+  usage: (id: string) => call<{ items: Used[]; links: Used[]; edited: { actor: string; at: string } | null }>(`/entries/${id}/usage`),
+  linkCheck: (entry?: string) => call<LinkProblem[]>(`/link-check${entry ? `?entry=${entry}` : ""}`),
   get: (id: string) => call<Entry>(`/entries/${id}?live=1`),
   create: (e: EntryInput) => call<Entry>("/entries", { method: "POST", body: JSON.stringify(e) }),
   update: (id: string, e: EntryInput) => call<Entry>(`/entries/${id}`, { method: "PUT", body: JSON.stringify(e) }),
