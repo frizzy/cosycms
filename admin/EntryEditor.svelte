@@ -121,7 +121,7 @@
   function adopt(e: Entry) {
     snap = { slug: e.slug, publishAt: e.publishAt ?? null, unpublishAt: e.unpublishAt ?? null, data: copy(e.data) };
     liveSnap = e.live ? { slug: e.live.slug, publishAt: null, data: copy(e.live.data) } : null;
-    kept = e.keepCase ?? {}; seenAt = e.updatedAt;
+    kept = e.keepCase ?? {}; seenAt = e.updatedAt; liveSlug = e.liveSlug;
     savedSlug = e.slug; ({ slug, data, published, pending, schedule: sched, publishAt, unpublishAt, publishedAt, revisedAt } = e);
   }
   $effect(() => {
@@ -132,6 +132,11 @@
   // Where this entry is used (an image in a post, a link from another entry): shown below the form when there is anything.
   let usage = $state<Used[]>([]), links = $state<Used[]>([]), edited = $state<{ actor: string; at: string } | null>(null), broken = $state<LinkProblem[]>([]);
   $effect(() => { seenAt; if (id) { api.usage(id).then((r) => { usage = r.items; links = r.links; edited = r.edited; }, () => {}); api.linkCheck(id).then((r) => (broken = r), () => {}); } }); // seenAt changes on every save, so this refreshes then too
+  let liveSlug = $state<string | undefined>();
+  const siteLink = $derived.by(() => {
+    const t = published && liveSlug && c.urlTemplate?.replace("{slug}", liveSlug);
+    return !t ? null : /^https?:/.test(t) ? t : store.siteUrl ? store.siteUrl + t : null;
+  });
   const collLabel = (key: string) => store.collections.find((x) => x.key === key)?.label ?? key;
 
   // Saving only ever changes the draft. Returns the entry's id when it saved.
@@ -143,7 +148,7 @@
     try {
       const body = { collection, slug, data: clean, ...(Object.keys(keepCase).length ? { keepCase } : {}), ...(c.dates ? { publishAt: publishAt || null, unpublishAt: unpublishAt || null } : {}) };
       let target = id, saved: Record<string, unknown> = {};
-      if (id) { const e = await api.update(id, body); seenAt = e.updatedAt; saved = e.data; kept = e.keepCase ?? {}; ({ published, pending, schedule: sched, publishAt, unpublishAt, publishedAt, revisedAt } = e); }
+      if (id) { const e = await api.update(id, body); seenAt = e.updatedAt; liveSlug = e.liveSlug; saved = e.data; kept = e.keepCase ?? {}; ({ published, pending, schedule: sched, publishAt, unpublishAt, publishedAt, revisedAt } = e); }
       else { const e = await api.create(body); target = createdId = e.id; sched = e.schedule; saved = e.data; kept = e.keepCase ?? {}; }
       // Capitalisation is applied by the server; take its result, and remember which fields it touched.
       const fixed = c.fields.filter((f) => "casing" in f && f.casing && JSON.stringify(saved[f.key] ?? null) !== JSON.stringify(clean[f.key] ?? null));
@@ -230,7 +235,7 @@
     view = { ...review, stage: "working", error: "" };
     if (dirty && !(await persist(keepNext))) { view = { ...review, error }; return; }
     try {
-      ({ published, pending, schedule: sched, publishAt, unpublishAt, publishedAt, revisedAt } = await api.publishEntry(id));
+      ({ published, pending, liveSlug, schedule: sched, publishAt, unpublishAt, publishedAt, revisedAt } = await api.publishEntry(id));
       liveSnap = nowSnap(); refreshCounts();
       view = { stage: "done", title: "Published", status: "It goes to the site on the next Deploy.", changes: review.changes, empty: "", note: tidyNote() };
     } catch (e) { view = { ...review, error: (e as Error).message }; }
@@ -238,7 +243,7 @@
   async function unpublish() {
     if (!id || !(await ask({ title: "Take this off the site?", message: "The draft stays. It comes off the site on the next Deploy.", confirm: "Unpublish" }))) return;
     try {
-      ({ published, pending, schedule: sched, publishAt, unpublishAt, publishedAt, revisedAt } = await api.unpublishEntry(id));
+      ({ published, pending, liveSlug, schedule: sched, publishAt, unpublishAt, publishedAt, revisedAt } = await api.unpublishEntry(id));
       liveSnap = null; refreshCounts();
       view = { stage: "done", title: "Unpublished", status: "It comes off the site on the next Deploy. The draft stays.", changes: [], empty: "" };
     } catch (e) { error = (e as Error).message; }
@@ -333,6 +338,7 @@
       {#if id && published && pending && !dirty}<button type="button" class="ghost" onclick={revert}>Discard draft changes</button>{/if}
       {#if id && published}<button type="button" class="ghost" onclick={unpublish}>Unpublish</button>{/if}
       <button type="button" class="ghost" onclick={() => (previewing = true)}>Preview</button>
+      {#if siteLink}<button type="button" class="ghost" onclick={() => window.open(siteLink, "_blank", "noopener")}>{pending ? "View live version" : "View on site"}</button>{/if}
       {#if id && !c.single}<button type="button" class="ghost" onclick={duplicate}>Duplicate</button>{/if}
       {#if id}<button type="button" class="danger" onclick={remove}>Delete</button>{/if}
       <span class="status">{#if error}<span class="error">{error}</span>{:else if dirty}<span class="dirty">Unsaved changes</span>{/if}</span>

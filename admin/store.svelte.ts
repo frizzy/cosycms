@@ -4,12 +4,13 @@ import type { BlockDef } from "../src/blocks";
 import type { TemplateDef } from "../src/templates";
 
 // `dirty` is set by whichever editor is open; the router asks before navigating away from unsaved work.
-export const store = $state<{ collections: Collection[]; blocks: BlockDef[]; templates: TemplateDef[]; loaded: boolean; error: string; dirty: boolean; zoom?: { src: string; alt: string }; me?: Me | null; signIn?: number; unread?: number; counts: Counts; people: Record<string, { name?: string | null; avatar?: string | null }>; discardDraft?: () => void }>({ collections: [], blocks: [], templates: [], loaded: false, error: "", dirty: false, counts: {}, people: {} });
+export const store = $state<{ collections: Collection[]; blocks: BlockDef[]; templates: TemplateDef[]; loaded: boolean; error: string; dirty: boolean; zoom?: { src: string; alt: string }; me?: Me | null; signIn?: number; unread?: number; siteUrl?: string; counts: Counts; people: Record<string, { name?: string | null; avatar?: string | null }>; discardDraft?: () => void }>({ collections: [], blocks: [], templates: [], loaded: false, error: "", dirty: false, counts: {}, people: {} });
 hooks.unauthorized = () => { store.me = null; };
 
 export async function refreshCollections() {
   try { [store.collections, store.blocks, store.templates] = await Promise.all([api.collections(), api.blocks(), api.templates()]); store.error = ""; }
   catch (e) { store.error = (e as Error).message; }
+  api.siteUrl().then((r) => (store.siteUrl = r.url), () => {});
   store.loaded = true;
 }
 

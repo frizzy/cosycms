@@ -44,7 +44,7 @@ const db = (c: { env: Env["Bindings"] }) => drizzle(c.env.DB);
 const isConflict = (e: unknown) => /UNIQUE/.test(String(e) + String((e as Error).cause));
 // What the admin sees of an entry: the working draft, plus whether a published version exists and whether the draft has moved on from it.
 type Row = typeof entries.$inferSelect;
-const shape = ({ live, ...e }: Row) => ({ ...e, published: !!live });
+const shape = ({ live, ...e }: Row) => ({ ...e, published: !!live, liveSlug: live?.slug }); // liveSlug: the address the site has it at (the draft slug may have changed since)
 const differs = (live: Row["live"], slug: string, data: Record<string, unknown>) => !!live && (live.slug !== slug || JSON.stringify(live.data) !== JSON.stringify(data));
 const log = (c: { env: Env["Bindings"]; get(k: "user"): Env["Variables"]["user"] }, e: Event) => logActivity(c.env.DB, { email: c.get("user").email, via: c.get("user").via }, e);
 /** What an entry is called in the history: its title if the collection has one, else its slug. */
@@ -750,6 +750,17 @@ app.post("/settings/check", ownerOnly, async (c) => {
   const token = body.data.token || saved.token, repo = body.data.repo || saved.repo;
   if (!token || !repo) return c.json({ error: "Add a repository and a token first." }, 400);
   return c.json({ checks: await githubCheck({ token, repo, branch: body.data.branch || saved.branch }) });
+});
+
+// The site's address (https://example.com), so "View on site" can turn a collection's page address into a link.
+app.get("/settings/site", async (c) => c.json({ url: (await db(c).select().from(settings).where(eq(settings.key, "site.url")))[0]?.value ?? "" }));
+app.put("/settings/site", ownerOnly, async (c) => {
+  const input = z.object({ url: z.url({ protocol: /^https?$/ }).or(z.literal("")) }).safeParse(await c.req.json().catch(() => ({})));
+  if (!input.success) return c.json({ error: "Use a full address like https://example.com" }, 400);
+  const url = input.data.url.replace(/\/+$/, "");
+  await (url ? db(c).insert(settings).values({ key: "site.url", value: url }).onConflictDoUpdate({ target: settings.key, set: { value: url } }) : db(c).delete(settings).where(eq(settings.key, "site.url")));
+  await log(c, { action: "settings.save", label: "Site address" });
+  return c.body(null, 204);
 });
 
 app.put("/settings", ownerOnly, async (c) => {

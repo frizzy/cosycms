@@ -204,7 +204,7 @@
     </label>
     <label>Page address on the site
       <input bind:value={urlTemplate} placeholder="/blog/{'{slug}'}" pattern={"(/|https?://)\\S*\\{slug\\}\\S*"} title={"Start with / or https:// and include {slug}"} />
-      <small class="muted">Where an entry of this collection lives on your site, like <code>/blog/{"{slug}"}</code>. It lets links in text point at these entries, and the address is filled in when you publish. Leave empty if they have no pages.</small>
+      <small class="muted">Where an entry of this collection lives on your site, like <code>/blog/{"{slug}"}</code>. It lets links in text point at these entries, and the address is filled in when you publish. "View on site" uses it too, with the site address from Settings > Publishing. Leave empty if they have no pages.</small>
     </label>
     {#if isMd}
       <label>Body field

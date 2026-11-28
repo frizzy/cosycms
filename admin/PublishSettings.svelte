@@ -2,6 +2,7 @@
   import { api } from "./api";
   import { toast } from "./toast.svelte";
   import { saveShortcut } from "./keys";
+  import { store } from "./store.svelte";
   let repo = $state(""), branch = $state(""), dir = $state(""), token = $state("");
   let hasToken = $state(false), tokenError = $state(""), loading = $state(true), error = $state("");
   let checks = $state<Awaited<ReturnType<typeof api.checkAccess>>["checks"]>(), checking = $state(false);
@@ -10,6 +11,14 @@
     ({ repo = "", branch = "", dir = "", hasToken, tokenError = "" } = s); token = ""; loading = false;
   }, (e) => { error = e.message; loading = false; });
   $effect(() => { load(); });
+
+  let siteUrl = $state("");
+  $effect(() => { api.siteUrl().then((r) => (siteUrl = r.url), () => {}); });
+  async function saveSite(ev: SubmitEvent) {
+    ev.preventDefault(); error = "";
+    try { await api.saveSiteUrl(siteUrl.trim()); store.siteUrl = siteUrl.trim().replace(/\/+$/, ""); toast("Saved"); }
+    catch (e) { error = (e as Error).message; }
+  }
 
   // Tests what is in the form, saved or not (a blank token means the saved one).
   async function check() {
@@ -27,6 +36,13 @@
 
 {#if loading}<p class="muted">Loading…</p>
 {:else}
+  <form onsubmit={saveSite} use:saveShortcut>
+    <h2>Your site</h2>
+    <label>Site address <input type="url" bind:value={siteUrl} placeholder="https://example.com" />
+      <small class="muted">Used for "View on site" on published entries, together with each collection's page address.</small>
+    </label>
+    <div class="actions"><button type="submit">Save</button></div>
+  </form>
   <form onsubmit={save} use:saveShortcut>
     <h2>GitHub deploy target</h2>
     <label>Repository <input bind:value={repo} placeholder="owner/name" /></label>

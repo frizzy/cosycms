@@ -7,7 +7,7 @@ import type { TemplateDef } from "../src/templates";
 
 export type Entry = {
   id: string; collection: string; slug: string;
-  published: boolean; pending: boolean; // has a published version; the draft differs from it
+  liveSlug?: string; published: boolean; pending: boolean; // has a published version; the draft differs from it
   data: Record<string, unknown>; updatedAt: string;
   keepCase?: Record<string, string[]> | null; // text the person chose not to auto-capitalise (see src/casing.ts)
   live?: { slug: string; data: Record<string, unknown> } | null; // single-entry reads only: the published version
@@ -96,6 +96,8 @@ export const api = {
   createCollection: (c: CollectionInput) => call<Collection>("/collections", { method: "POST", body: JSON.stringify(c) }),
   updateCollection: (key: string, c: CollectionInput) => call<Collection>(`/collections/${key}`, { method: "PUT", body: JSON.stringify(c) }),
   deleteCollection: (key: string) => call<void>(`/collections/${key}`, { method: "DELETE" }),
+  siteUrl: () => call<{ url: string }>("/settings/site"),
+  saveSiteUrl: (url: string) => call<void>("/settings/site", { method: "PUT", body: JSON.stringify({ url }) }),
   settings: () => call<Settings>("/settings"),
   saveSettings: (s: SettingsInput) => call<void>("/settings", { method: "PUT", body: JSON.stringify(s) }),
   search: (collection: string, o: { q: string; sort: string; dir: "asc" | "desc"; limit: number; offset: number; filter?: string }) =>

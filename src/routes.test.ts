@@ -185,3 +185,13 @@ test("link check finds deleted and unpublished targets; usage shows who last edi
   assert.equal((await call("DELETE", `/entries/${other}`)).status, 409, "deleting a linked entry is refused");
   assert.ok((await call("GET", `/entries/${id}/usage`)).body.edited.actor);
 });
+
+test("site address is saved without a trailing slash, and an entry reports the slug it is live at", async () => {
+  const { call, id } = await setup();
+  assert.equal((await call("PUT", "/settings/site", { url: "nope" })).status, 400);
+  assert.equal((await call("PUT", "/settings/site", { url: "https://example.com/" })).status, 204);
+  assert.equal((await call("GET", "/settings/site")).body.url, "https://example.com");
+  await call("POST", `/entries/${id}/publish`);
+  await call("PUT", `/entries/${id}`, { collection: "posts", slug: "renamed", data: { title: "Hello" } });
+  assert.equal((await call("GET", `/entries/${id}`)).body.liveSlug, "hello");
+});
